@@ -1,0 +1,12 @@
+# create .gitignore
+@"
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/staging/
+data/reports/
+*.parquet
+.DS_Store
+"@ | Out-File -Encoding utf8 .gitignore

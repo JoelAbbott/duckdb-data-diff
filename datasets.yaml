@@ -1,8 +1,7 @@
 datasets:
-  left_file:
-    path: "data/raw/left.xlsx"
-    sheet: "Sheet1"
-    keys: ["invoice_id","line_num"]
+  left_file_csv:
+    path: "tests/fixtures/left.csv"
+    keys: ["invoice_id", "line_num"]
     column_map:
       "Invoice ID": invoice_id
       "Line#": line_num
@@ -20,12 +19,34 @@ datasets:
       invoice_date: date
       last_modified: date
     normalizers:
-      invoice_id: [unicode_clean]
+      sku: [unicode_clean, upper, collapse_spaces]
+
+  left_file_xlsx:
+    path: "tests/fixtures/left.xlsx"
+    sheet: "Sheet1"
+    keys: ["invoice_id", "line_num"]
+    column_map:
+      "Invoice ID": invoice_id
+      "Line#": line_num
+      "SKU Code": sku
+      "Qty": quantity
+      "Unit Price ($)": unit_price
+      "Invoice Date": invoice_date
+      "Last Modified": last_modified
+    dtypes:
+      invoice_id: string
+      line_num: int64
+      sku: string
+      quantity: int64
+      unit_price: currency_usd
+      invoice_date: date
+      last_modified: date
+    normalizers:
       sku: [unicode_clean, upper, collapse_spaces]
 
   right_file:
-    path: "data/raw/right.csv"
-    keys: ["invoice_id","line_num"]
+    path: "tests/fixtures/right.csv"
+    keys: ["invoice_id", "line_num"]
     column_map:
       "Invoice ID": invoice_id
       "Line": line_num
@@ -43,14 +64,13 @@ datasets:
       invoice_date: date
       last_modified: date
     normalizers:
-      invoice_id: [unicode_clean]
       sku: [unicode_clean, upper, collapse_spaces]
 
 comparisons:
   - name: "invoices_vs_jobs"
-    left: "left_file"
+    left: "left_file_csv"
     right: "right_file"
-    keys: ["invoice_id","line_num"]
+    keys: ["invoice_id", "line_num"]
     compare_columns: [sku, quantity, unit_price, invoice_date]
     numeric_round: 4
     date_filter:

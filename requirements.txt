@@ -1,0 +1,6 @@
+duckdb
+pandas
+pyyaml
+openpyxl
+xlsxwriter
+pytest

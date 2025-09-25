@@ -480,14 +480,14 @@ class DataComparator:
                                         WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
                                         WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
                                         -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(REGEXP_REPLACE(CAST(l.{norm_col} AS VARCHAR), '^[\'\"]*|[\'\"]*$', '', 'g'))), '\\s+', ' ', 'g')
+                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(CAST(l.{norm_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
                                     END != 
                                     CASE 
                                         -- Boolean normalization
                                         WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
                                         WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
                                         -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(REGEXP_REPLACE(CAST(r.{norm_right_col} AS VARCHAR), '^[\'\"]*|[\'\"]*$', '', 'g'))), '\\s+', ' ', 'g')
+                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(CAST(r.{norm_right_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
                                     END
                                 )
                         END

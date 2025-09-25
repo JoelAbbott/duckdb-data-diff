@@ -104,17 +104,17 @@ class TestSQLSyntaxFix:
             f"Expected SQL parser error, but got: {exc_info.value}"
         )
     
-    def test_robust_comparison_condition_fails_due_to_regex_syntax(self):
+    def test_robust_comparison_condition_now_works_with_safe_syntax(self):
         """
-        Test that _build_robust_comparison_condition generates SQL with parser errors.
+        Test that _build_robust_comparison_condition now generates working SQL.
         
-        EXPECTED TO FAIL INITIALLY: The method generates SQL containing the broken
-        regex pattern, causing ParserException when executed.
+        PHASE 1 (Before Fix): Method generated SQL with broken regex causing ParserException.
+        PHASE 2 (After Fix): Method should generate safe SQL that executes successfully.
         
-        After fix: The method should generate safe SQL that executes successfully.
+        This test verifies the fix is working by ensuring the SQL executes without errors.
         """
         # Get the robust comparison condition from the comparator
-        # This will contain the problematic regex pattern
+        # This should now contain the safe LTRIM/RTRIM pattern
         condition_sql = self.comparator._build_robust_comparison_condition(
             norm_col="text_col", 
             norm_right_col="text_col", 
@@ -131,15 +131,29 @@ class TestSQLSyntaxFix:
         
         print(f"Generated SQL condition:\n{condition_sql}")
         
-        # PHASE 1 (TDD - Test Must Fail): This should raise a SQL parser error
-        # due to the problematic regex pattern in the comparison condition
-        with pytest.raises(duckdb.ParserException) as exc_info:
+        # PHASE 2 (After Fix): This should execute successfully without parser errors
+        try:
             result = self.con.execute(test_query).fetchone()
+            count = result[0] if result else 0
+            
+            # Verify the query executed and returned a valid count
+            assert isinstance(count, int), f"Expected integer count, got {type(count)}"
+            
+            # With proper quote stripping, we should find 0 differences 
+            # because '"System"' should equal 'System' after normalization
+            assert count == 0, (
+                f"Expected 0 differences with working quote stripping, got {count}"
+            )
+            
+        except Exception as e:
+            pytest.fail(f"Fixed SQL should execute successfully, but got: {e}")
         
-        # Verify the error is related to the regex syntax
-        error_msg = str(exc_info.value)
-        assert '"]*|[\'"]*$' in error_msg or 'syntax error' in error_msg.lower(), (
-            f"Expected regex syntax error, but got: {exc_info.value}"
+        # Verify the SQL contains the safe LTRIM/RTRIM pattern instead of broken regex
+        assert 'LTRIM' in condition_sql and 'RTRIM' in condition_sql, (
+            "Fixed SQL should contain safe LTRIM/RTRIM pattern"
+        )
+        assert '^[\'\"]*|[\'\"]*$' not in condition_sql, (
+            "Fixed SQL should not contain the broken regex pattern"
         )
     
     def test_safe_quote_stripping_alternative_works(self):

@@ -477,17 +477,17 @@ class DataComparator:
                                 (
                                     CASE 
                                         -- Boolean normalization
-                                        WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                        WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
+                                        WHEN LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
+                                        WHEN LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
                                         -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(CAST(l.{norm_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
+                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(TRY_CAST(l.{norm_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
                                     END != 
                                     CASE 
                                         -- Boolean normalization
-                                        WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                        WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
+                                        WHEN LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
+                                        WHEN LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
                                         -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(CAST(r.{norm_right_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
+                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(TRY_CAST(r.{norm_right_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
                                     END
                                 )
                         END
@@ -1003,8 +1003,8 @@ class DataComparator:
                     SELECT 
                         {', '.join(key_selects)} AS "Key",
                         '{col}' AS "Differing Column",
-                        CAST(l.{norm_col} AS VARCHAR) AS "Left Value",
-                        CAST(r.{norm_right_col} AS VARCHAR) AS "Right Value",
+                        TRY_CAST(l.{norm_col} AS VARCHAR) AS "Left Value",
+                        TRY_CAST(r.{norm_right_col} AS VARCHAR) AS "Right Value",
                         CASE 
                             WHEN l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL THEN 'Missing in Left'
                             WHEN l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL THEN 'Missing in Right'
@@ -1033,11 +1033,11 @@ class DataComparator:
                 # No value columns - create empty result with correct structure
                 final_query = f"""
                     SELECT 
-                        CAST(NULL AS VARCHAR) AS "Key",
-                        CAST(NULL AS VARCHAR) AS "Differing Column", 
-                        CAST(NULL AS VARCHAR) AS "Left Value",
-                        CAST(NULL AS VARCHAR) AS "Right Value",
-                        CAST(NULL AS VARCHAR) AS "Difference Type"
+                        TRY_CAST(NULL AS VARCHAR) AS "Key",
+                        TRY_CAST(NULL AS VARCHAR) AS "Differing Column", 
+                        TRY_CAST(NULL AS VARCHAR) AS "Left Value",
+                        TRY_CAST(NULL AS VARCHAR) AS "Right Value",
+                        TRY_CAST(NULL AS VARCHAR) AS "Difference Type"
                     WHERE FALSE
                 """
             

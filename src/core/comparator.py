@@ -975,46 +975,61 @@ class DataComparator:
             
             where_clause = " OR ".join(comparisons) if comparisons else "FALSE"
             
-            # Build column selection for the report with professional headers
+            # Build dynamic column selection for the report with filtering
+            # This implements the simplified dynamic filtering approach:
+            # Only include columns that have differences (Status != 'Matched')
             select_columns = []
             
-            # Add key columns with friendly names
+            # Add key columns with friendly names (always included)
             for key in key_columns:
                 norm_key = normalize_column_name(key)
                 # Use the original key name in the header
                 select_columns.append(f'l.{norm_key} AS "{key}"')
             
-            # Add value columns from both sides with professional naming
+            # Create a dynamic columns expression using CASE statements
+            # This conditionally includes value columns only if they have differences
+            dynamic_columns = []
+            
             for col in value_columns:
                 norm_col = normalize_column_name(col)
                 right_col = self._get_right_column(col)
                 norm_right_col = normalize_column_name(right_col)
                 
-                # Use dataset names and original column names in headers
-                # Original column name preserved, dataset name prepended
-                select_columns.append(f'l.{norm_col} AS "{left_dataset_name} {col}"')
-                select_columns.append(f'r.{norm_right_col} AS "{right_dataset_name} {col}"')
+                # Build the difference condition using robust comparison logic
+                difference_condition = self._build_robust_comparison_condition(
+                    norm_col, norm_right_col, export_config
+                ).strip()
                 
-                # Add a difference indicator with business-friendly labels
-                select_columns.append(f"""
+                # Add conditional columns that only appear if there's a difference
+                # Use CASE to conditionally show the column values
+                dynamic_columns.extend([
+                    f"""
                     CASE 
-                        WHEN l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL THEN 'Missing in Left'
-                        WHEN l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL THEN 'Missing in Right'
-                        WHEN (
+                        WHEN {difference_condition} THEN l.{norm_col}
+                        ELSE NULL
+                    END AS "{left_dataset_name} {col}"
+                    """,
+                    f"""
+                    CASE 
+                        WHEN {difference_condition} THEN r.{norm_right_col}
+                        ELSE NULL
+                    END AS "{right_dataset_name} {col}"
+                    """,
+                    f"""
+                    CASE 
+                        WHEN {difference_condition} THEN
                             CASE 
-                                WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                WHEN LOWER(CAST(l.{norm_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
-                                ELSE CAST(l.{norm_col} AS VARCHAR)
-                            END != 
-                            CASE 
-                                WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                WHEN LOWER(CAST(r.{norm_right_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
-                                ELSE CAST(r.{norm_right_col} AS VARCHAR)
+                                WHEN l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL THEN 'Missing in Left'
+                                WHEN l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL THEN 'Missing in Right'
+                                ELSE 'Different Values'
                             END
-                        ) THEN 'Different Values'
-                        ELSE 'Matched'
+                        ELSE NULL
                     END AS "{col} Status"
-                """)
+                    """
+                ])
+            
+            # Add the dynamic columns to the select list
+            select_columns.extend(dynamic_columns)
             
             select_stmt = ", ".join(select_columns)
             

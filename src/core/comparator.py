@@ -959,7 +959,7 @@ class DataComparator:
             
             # Build robust comparison to find differences using centralized logic
             # Create a temporary config for exact comparison (no tolerance)
-            export_config = ComparisonConfig()
+            export_config = ComparisonConfig(left_dataset="temp_left", right_dataset="temp_right")
             export_config.tolerance = 0  # Always exact comparison for export
             
             comparisons = []
@@ -1094,7 +1094,7 @@ class DataComparator:
         value_diff_count = 0
         if value_columns and matched_count > 0:
             # Create a temporary config for exact comparison (no tolerance)
-            summary_config = ComparisonConfig()
+            summary_config = ComparisonConfig(left_dataset="temp_left", right_dataset="temp_right")
             summary_config.tolerance = 0  # Always exact comparison for summary
             
             comparisons = []

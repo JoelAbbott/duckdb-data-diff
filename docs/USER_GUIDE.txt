@@ -1,0 +1,460 @@
+================================================================================
+                    DUCKDB DATA COMPARISON SYSTEM - USER GUIDE
+================================================================================
+                            Version 3.0 (December 2024)
+                    ENTERPRISE-READY WITH ADVANCED ARCHITECTURE
+================================================================================
+
+QUICK REFERENCE
+---------------
+Menu Interface:        python compare_datasets.py
+Main Entry Point:      python main.py
+Create Sample Config:  python main.py --create-sample
+With Progress Bars:    python main.py datasets.yaml
+Simple Output:         python main.py datasets.yaml --no-rich
+Verbose Mode:          python main.py datasets.yaml --verbose
+
+TABLE OF CONTENTS
+-----------------
+1. QUICK START
+2. MENU INTERFACE
+3. COMMAND LINE OPTIONS
+4. DATA PREPARATION
+5. OUTPUT STRUCTURE
+6. TROUBLESHOOTING
+7. ADVANCED FEATURES
+
+================================================================================
+1. QUICK START
+================================================================================
+
+The easiest way to use the system is through the interactive menu:
+
+    python compare_datasets.py
+
+This launches a user-friendly menu interface that:
+• Automatically scans your data/raw directory
+• Lists all available files with sizes
+• Lets you select files from numbered lists
+• No need to type file paths!
+
+For direct command-line usage (advanced):
+
+    python main.py datasets.yaml
+
+================================================================================
+2. MENU INTERFACE (NEW!)
+================================================================================
+
+When you run `python compare_datasets.py`, you'll see:
+
+    ============================================================
+           DUCKDB DATA COMPARISON SYSTEM
+    ============================================================
+    1. Quick Comparison (Auto-match columns)
+    2. Interactive Comparison (Review matches)
+    3. View Available Files
+    4. Exit
+    ============================================================
+    
+    Select option (1-4):
+
+MENU OPTIONS EXPLAINED:
+
+[1] Quick Comparison
+--------------------
+- Scans data/raw directory for available files
+- Shows numbered list of files with sizes
+- Let you select left and right datasets
+- Automatically generates configuration
+- Runs the complete comparison pipeline
+- Best for: Fast comparisons without manual setup
+
+[2] Interactive Comparison
+--------------------------
+- Profiles datasets automatically (1000 row sample)
+- Smart column matching with confidence scores
+- Interactive review of all proposed matches
+- Manual column selection for unmatched columns
+- Enhanced mapping algorithms with semantic patterns
+- Best for: Complex datasets requiring human verification
+
+[3] View Available Files
+------------------------
+- Lists all supported files in data/raw/
+- Shows file names, sizes, and types
+- Supports: CSV, Excel (.xlsx/.xls), Parquet
+- Helps you see what data is available
+
+[4] Exit
+--------
+- Exits the program gracefully
+
+================================================================================
+3. COMMAND LINE OPTIONS
+================================================================================
+
+For automated/scripted usage, command-line options are still available:
+
+BASIC USAGE:
+    python compare_datasets.py [left_file] [right_file] [options]
+
+OPTIONS:
+    --interactive, -i     Enable interactive column matching review
+    --run-pipeline, -r    Run DuckDB pipeline after configuration
+    --output DIR, -o DIR  Specify output directory (auto-generated if not set)
+    --config FILE, -c     Use existing configuration file
+    --quiet, -q           Minimal output
+
+EXAMPLES:
+
+1. Basic comparison:
+    python compare_datasets.py left.xlsx right.csv
+
+2. Interactive with pipeline:
+    python compare_datasets.py left.xlsx right.csv --interactive --run-pipeline
+
+3. Use existing config:
+    python compare_datasets.py left.xlsx right.csv --config datasets.yaml --run-pipeline
+
+4. Launch menu (no arguments):
+    python compare_datasets.py
+
+================================================================================
+4. DATA PREPARATION
+================================================================================
+
+FILE PLACEMENT:
+    Place your data files in: data/raw/
+    
+The menu system automatically scans this directory!
+
+SUPPORTED FORMATS:
+    - Excel (.xlsx, .xls)
+    - CSV (.csv) 
+    - Parquet (.parquet)
+
+FILE NAMING:
+    Use descriptive names for your files:
+    ✓ GOOD: qa2_netsuite_messages.xlsx, sales_2024.csv
+    ✗ AVOID: data.xlsx, file1.csv, temp.xlsx
+
+DATA REQUIREMENTS:
+    - Files should have headers in the first row
+    - At least one column should be suitable as a key
+    - Consistent data types within columns recommended
+    - No spaces in file names with parentheses work fine
+
+================================================================================
+5. OUTPUT STRUCTURE (IMPROVED!)
+================================================================================
+
+All outputs are organized in timestamped directories:
+
+data/
+├── raw/                    # Your input files go here (menu scans this)
+└── reports/               # All comparison results
+    └── dataset1_vs_dataset2_20241223_143022/
+        ├── differences/   # Detailed difference reports
+        ├── summary/       # High-level comparison stats
+        └── config/        # Generated YAML configuration
+
+FILE DESCRIPTIONS:
+
+profiles/
+    - Contains statistical analysis of each dataset
+    - Shows data types, patterns, cardinality
+    - Identifies potential key columns
+    - Detects data quality issues
+
+matches/
+    - Shows how columns were matched between datasets
+    - Includes confidence scores and match reasons
+    - Lists unmatched columns from both sides
+
+config/
+    - YAML configuration for the DuckDB pipeline
+    - Contains column mappings, data types, normalizers
+    - Includes comparisons section (required for pipeline)
+    - Can be reused for future comparisons
+
+reports/
+    - Excel/CSV reports from pipeline execution
+    - Shows actual data differences
+    - Includes match/mismatch statistics
+
+================================================================================
+6. TROUBLESHOOTING
+================================================================================
+
+COMMON ISSUES:
+
+"Need at least 2 data files"
+    → Solution: Place your files in data/raw/ directory
+
+"No configuration files found"
+    → Solution: Run a comparison first to generate configurations
+
+"Pipeline failed"
+    → Check datasets.yaml has both 'datasets' and 'comparisons' sections
+    → Verify file paths are correct
+    → Check that key columns exist in both datasets
+
+"Permission denied" errors
+    → OneDrive/cloud sync may be locking files
+    → Try pausing sync temporarily
+    → Close any Excel files that might be open
+
+Memory issues with large files
+    → The system samples data for matching (1000 rows)
+    → Full processing happens in DuckDB (efficient)
+    → Consider increasing available RAM
+
+Date parsing warnings
+    → These are usually harmless
+    → Dates are still processed correctly
+    → Set date columns to 'date' type in config
+
+================================================================================
+7. ADVANCED FEATURES
+================================================================================
+
+COLUMN MATCHING STRATEGIES:
+The system uses multiple strategies to match columns:
+
+1. Exact Name Match (100% confidence)
+   - Columns with identical names
+
+2. Pattern Recognition (90-95% confidence)
+   - Detects emails, phones, URLs, dates, currency
+   - Matches columns with same patterns
+
+3. Statistical Similarity (70-85% confidence)
+   - Compares distributions for numeric columns
+   - Uses mean, std deviation, percentiles
+
+4. Value Overlap (60-80% confidence)
+   - Samples actual data values
+   - Checks for common values between columns
+
+5. Fuzzy Name Match (50-70% confidence)
+   - Uses Levenshtein distance
+   - Handles minor spelling variations
+
+INTERACTIVE MODE FEATURES:
+
+When entering interactive mode, you'll first choose what to review:
+    
+    📊 Found 20 total column matches:
+      • High confidence (≥80%): 15 matches
+      • Medium confidence (50-80%): 3 matches
+      • Low confidence (<50%): 2 matches
+    
+    What would you like to review?
+      [1] All matches (recommended for critical comparisons)
+      [2] Only uncertain matches (confidence < 80%)
+      [3] Only medium/low confidence (confidence < 80%)
+      [4] Skip review and accept all
+    
+    Your choice [1-4]: 
+
+ENHANCED INTERACTIVE FEATURES:
+
+1. **Smart Column Matching**: Uses multiple strategies:
+   - Exact name matches (100% confidence)
+   - Semantic patterns (85% confidence)
+     • "From" → "author"
+     • "Has Attachments" → "is_attachment_included"
+     • "Internal ID" → "message_id"
+   - Partial name matches (80% confidence)
+   - Data type similarity (70% confidence)
+
+2. **Interactive Review Options**:
+   During review, for each match you can:
+   - [Enter] Accept the suggested match
+   - [s] Skip this match (no mapping)
+   - [m] Manual - choose different column from list
+   - [q] Quit review and proceed
+
+Example interaction:
+    📋 Found 15 potential column matches
+    
+    ============================================================
+    COLUMN MATCH REVIEW
+    ============================================================
+    
+    Match 1/15:
+      Left column:  From Email Address
+      Right column: author_email
+      Confidence:   100.0%
+      Reason:       exact_normalized_match
+    
+      [Enter] Accept  [s] Skip  [m] Manual  [q] Quit: m
+    
+    🎯 Manual mapping for 'From Email Address'
+    Available right columns:
+    ----------------------------------------
+     1. author
+     2. author_email
+     3. email_bcc
+     4. is_emailed
+     5. vendor
+     ...
+    
+    Select column (1-20, 0 to cancel): 2
+    ✅ Manually mapped to: author_email
+
+CONFIGURATION CUSTOMIZATION:
+
+Generated YAML files can be manually edited for:
+- Custom normalizers
+- Modified column mappings  
+- Different key columns
+- Additional comparison columns
+- Numeric rounding (numeric_round: 2)
+- Date filtering (date_filter section)
+
+AVAILABLE NORMALIZERS:
+- unicode_clean: Fix encoding issues
+- upper: Convert to uppercase
+- lower: Convert to lowercase  
+- collapse_spaces: Normalize whitespace
+- boolean_t_f: Standardize True/False
+
+AVAILABLE DATA TYPES:
+- string: Text data
+- int64: Whole numbers
+- float64: Decimal numbers
+- date: Date values
+- boolean: True/False values
+
+AUTOMATION:
+
+For automated workflows:
+1. Generate configuration once interactively
+2. Save the configuration file
+3. Reuse with command line or menu option 3
+
+Example automation script:
+    #!/bin/bash
+    # Daily comparison script
+    python compare_datasets.py \
+        data/raw/daily_export.xlsx \
+        data/raw/warehouse_data.csv \
+        --config configs/standard_comparison.yaml \
+        --run-pipeline \
+        --quiet
+
+PERFORMANCE TIPS:
+
+For large datasets (>1M rows):
+- Dataset profiling uses only 1000 row samples (fast)
+- Column matching is memory efficient
+- Interactive review processes matches sequentially
+- Pipeline execution is optimized (DuckDB)
+- Consider running overnight for very large comparisons
+- Use Quick Comparison mode for faster processing
+
+REUSING CONFIGURATIONS:
+
+Save successful configs:
+    cp data/comparisons/*/config/*.yaml configs/my_config.yaml
+
+Then reuse via:
+- Menu option 3
+- Command line: --config configs/my_config.yaml
+
+================================================================================
+PROJECT STRUCTURE
+================================================================================
+
+duckdb-data-diff/
+├── compare_datasets.py     # Interactive menu interface (START HERE!)
+├── main.py                # Command-line interface
+├── src/                   # All source code
+│   ├── core/             # Business logic
+│   ├── config/           # Configuration management
+│   ├── pipeline/         # Data processing
+│   ├── ui/               # User interfaces (including menu)
+│   └── utils/            # Utilities
+├── data/
+│   ├── raw/              # Your input datasets go here
+│   └── reports/          # Comparison results
+├── tests/                # Test suites
+└── docs/
+    └── USER_GUIDE.txt    # This file
+
+================================================================================
+MANUAL CONFIGURATION (LEGACY)
+================================================================================
+
+For complex requirements, you can still manually edit datasets.yaml:
+
+datasets:
+  dataset_name:
+    path: "data/raw/file.xlsx"
+    sheet: "Sheet1"
+    keys: ["id_column"]
+    column_map:
+      "Original Name": normalized_name
+    dtypes:
+      normalized_name: string
+    normalizers:
+      normalized_name: [unicode_clean, upper]
+
+comparisons:  # REQUIRED SECTION!
+  - name: "comparison_name"
+    left: "dataset1_name"
+    right: "dataset2_name"
+    keys: ["key_column"]
+    compare_columns: [col1, col2]
+
+Then run:
+    python pipeline.py
+
+================================================================================
+                                END OF USER GUIDE
+================================================================================
+
+================================================================================
+KEY FEATURES AND IMPROVEMENTS
+================================================================================
+
+✅ MENU INTERFACE: Easy-to-use interactive menu system
+✅ FULL CONTROL: Review ALL matches or just uncertain ones  
+✅ SMART MATCHING: 5+ strategies for intelligent column matching
+✅ ORGANIZED OUTPUT: Timestamped directories with clear structure
+✅ AUTO CLEANUP: Remove old comparisons to save space
+✅ CONFIDENCE SCORES: Know how certain each match is
+✅ YAML GENERATION: Automatic config with comparisons section
+✅ TDD TESTED: All components thoroughly tested
+
+================================================================================
+COMMON USE CASES
+================================================================================
+
+CASE 1: Daily Data Validation
+-----------------------------
+Use Quick Comparison (menu option 1) for routine checks where you trust
+the automatic matching. The system will handle everything automatically.
+
+CASE 2: Critical Data Migration
+-------------------------------
+Use Interactive Comparison (menu option 2) and choose to review ALL
+matches. This ensures every column mapping is verified before migration.
+
+CASE 3: Repeated Comparisons
+----------------------------
+After initial setup, use menu option 3 to reuse existing configurations.
+Perfect for daily/weekly recurring comparisons.
+
+CASE 4: Automated Pipelines
+---------------------------
+Use command-line mode with --quiet flag for CI/CD integration:
+    python compare_datasets.py file1.xlsx file2.csv --quiet --run-pipeline
+
+================================================================================
+
+For technical documentation: See CLAUDE.md
+For bug reports: https://github.com/[your-repo]/issues
+Version: 2.1 - Full Interactive Control + Cleanup + Production Ready

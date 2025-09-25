@@ -1,0 +1,36 @@
+# DuckDB Data Diff Configuration
+# ===============================
+
+datasets:
+  # Define your datasets here
+  left_dataset:
+    path: "data/raw/left.csv"
+    type: "csv"
+    key_columns: ["id"]
+    exclude_columns: []
+    normalizers:
+      name: "unicode_clean"
+    converters:
+      amount: "currency_usd"
+    
+  right_dataset:
+    path: "data/raw/right.xlsx"
+    type: "excel"
+    key_columns: ["id"]
+    exclude_columns: []
+    normalizers:
+      name: "unicode_clean"
+    converters:
+      amount: "currency_usd"
+
+comparisons:
+  # Define comparisons to run
+  - left: "left_dataset"
+    right: "right_dataset"
+    keys: ["id"]
+    columns: []  # Empty means compare all columns
+    tolerance: 0.01
+    ignore_case: true
+    ignore_spaces: true
+    output_format: "excel"
+    max_differences: 1000

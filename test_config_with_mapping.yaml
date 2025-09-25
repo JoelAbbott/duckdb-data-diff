@@ -1,0 +1,30 @@
+comparisons:
+- keys:
+  - internal_id
+  left: netsuite_messages_1
+  right: qa2_netsuite_messages
+datasets:
+  netsuite_messages_1:
+    column_map: {}
+    path: data/raw/netsuite_messages (1).csv
+    type: csv
+  qa2_netsuite_messages:
+    column_map:
+      author: from
+      author_email: from_email_address
+      email_bcc: bcc
+      email_cc: cc
+      email_subject: subject
+      is_attachment_included: has_attachments
+      is_emailed: emailed
+      is_incoming: is_incoming
+      last_modified_date: modification_date
+      message_date: date_created
+      message_id: internal_id
+      message_type: type
+      recipient: recipient
+      recipient_email: email_address
+      transaction_id: internal_id_1
+      vendor: entity
+    path: data/raw/qa2_netsuite_messages.xlsx
+    type: excel

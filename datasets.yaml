@@ -1,80 +1,51 @@
+# DuckDB Data Diff Configuration
+# ===============================
+
 datasets:
-  left_file_csv:
-    path: "tests/fixtures/left.csv"
-    keys: ["invoice_id", "line_num"]
-    column_map:
-      "Invoice ID": invoice_id
-      "Line#": line_num
-      "SKU Code": sku
-      "Qty": quantity
-      "Unit Price ($)": unit_price
-      "Invoice Date": invoice_date
-      "Last Modified": last_modified
-    dtypes:
-      invoice_id: string
-      line_num: int64
-      sku: string
-      quantity: int64
-      unit_price: currency_usd
-      invoice_date: date
-      last_modified: date
-    normalizers:
-      sku: [unicode_clean, upper, collapse_spaces]
+  # Test with smaller files first
+  test_left:
+    path: "data/raw/test_100.csv"
+    type: "csv"
+    
+  test_right:
+    path: "data/raw/test_qa2_100.xlsx"
+    type: "excel"
 
-  left_file_xlsx:
-    path: "tests/fixtures/left.xlsx"
-    sheet: "Sheet1"
-    keys: ["invoice_id", "line_num"]
-    column_map:
-      "Invoice ID": invoice_id
-      "Line#": line_num
-      "SKU Code": sku
-      "Qty": quantity
-      "Unit Price ($)": unit_price
-      "Invoice Date": invoice_date
-      "Last Modified": last_modified
-    dtypes:
-      invoice_id: string
-      line_num: int64
-      sku: string
-      quantity: int64
-      unit_price: currency_usd
-      invoice_date: date
-      last_modified: date
+  # NetSuite Department comparison with strip_hierarchy normalizer
+  netsuite_department:
+    path: "data/raw/netsuite_department (2).csv"
+    type: "csv"
+    key_columns: ["Internal ID"]
     normalizers:
-      sku: [unicode_clean, upper, collapse_spaces]
-
-  right_file:
-    path: "tests/fixtures/right.csv"
-    keys: ["invoice_id", "line_num"]
+      Name: "strip_hierarchy"
+      "Full Name": "strip_hierarchy"
+    
+  qa2_netsuite_department:
+    path: "data/raw/qa2_netsuite_department.xlsx"
+    type: "excel"
+    key_columns: ["id"]
     column_map:
-      "Invoice ID": invoice_id
-      "Line": line_num
-      "Item": sku
-      "Qty Ordered": quantity
-      "Unit Price": unit_price
-      "Job Date": invoice_date
-      "LastModified": last_modified
-    dtypes:
-      invoice_id: string
-      line_num: int64
-      sku: string
-      quantity: int64
-      unit_price: currency_usd
-      invoice_date: date
-      last_modified: date
+      # Map right columns to left columns for comparison
+      id: "Internal ID"
+      department_name: "Name"
+      department_full_name: "Full Name"
+      is_department_include_children: "Include Children"
+      is_department_inactive: "Department is Inactive"
+      last_modified_date: "Last Modified Date"
     normalizers:
-      sku: [unicode_clean, upper, collapse_spaces]
+      department_name: "strip_hierarchy"
+      department_full_name: "strip_hierarchy"
 
 comparisons:
-  - name: "invoices_vs_jobs"
-    left: "left_file_csv"
-    right: "right_file"
-    keys: ["invoice_id", "line_num"]
-    compare_columns: [sku, quantity, unit_price, invoice_date]
-    numeric_round: 4
-    date_filter:
-      column_left: last_modified
-      column_right: last_modified
-      cutoff: "2025-06-30"
-      operator: "<="
+  # Compare test datasets 
+  - left: "test_left"
+    right: "test_right"
+    output_format: "csv"
+    max_differences: 1000
+    
+  # Compare NetSuite department data with strip_hierarchy normalizer
+  - left: "netsuite_department"
+    right: "qa2_netsuite_department"
+    keys: ["Internal ID"]
+    output_format: "csv"
+    max_differences: 1000

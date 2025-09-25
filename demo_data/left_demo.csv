@@ -1,0 +1,6 @@
+id,name,email,amount,active
+1,Alice Smith,alice@example.com,1000.5,true
+2,Bob Jones,bob@example.com,2500.75,false
+3,Charlie Brown,charlie@example.com,1750.25,true
+4,Diana Prince,diana@example.com,3200.0,true
+5,Eve Wilson,eve@example.com,875.9,false

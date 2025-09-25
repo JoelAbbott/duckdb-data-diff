@@ -1,0 +1,420 @@
+================================================================================
+                    DUCKDB DATA DIFF - COMPONENT LAYOUT
+                    Easy-to-Understand Architecture Guide
+================================================================================
+                            Version 3.0 (December 2024)
+================================================================================
+
+This document explains what each part of the codebase does in simple terms.
+Think of it as a map of all the components and how they work together!
+
+================================================================================
+THE BIG PICTURE - How Everything Fits Together
+================================================================================
+
+    Your Files � [File Reader] � [Data Processor] � [Comparator] � Results
+                       �              �                 �
+                  [Progress Bar] [Validator]      [Report Generator]
+
+The system works like an assembly line:
+1. Reads your files (Excel, CSV, etc.)
+2. Cleans and prepares the data
+3. Compares the datasets
+4. Generates easy-to-read reports
+
+================================================================================
+MAIN ENTRY POINTS
+================================================================================
+
+=� main.py
+----------
+What it does: The main control center - starts everything
+Think of it as: The conductor of an orchestra
+Key features:
+  " Loads your configuration file
+  " Coordinates all the other components
+  " Shows progress as things happen
+  " Handles errors gracefully
+
+=� compare_datasets.py (NEW MENU INTERFACE)
+-------------------------------------------
+What it does: Interactive menu-driven interface
+Think of it as: A friendly wizard that guides you
+Key features:
+  " Scans data/raw directory automatically
+  " Shows numbered file lists with sizes
+  " No need to type file paths
+  " Generates configurations on the fly
+  " Integrates with existing pipeline
+
+================================================================================
+CORE COMPONENTS (src/core/)
+================================================================================
+
+<� comparator.py
+----------------
+What it does: The brain that actually compares your data
+Think of it as: A detective finding differences
+Key features:
+  " Finds rows only in left dataset
+  " Finds rows only in right dataset
+  " Identifies values that changed
+  " Calculates match statistics
+
+=� lineage.py
+-------------
+What it does: Keeps track of everything that happened to your data
+Think of it as: A historian recording every step
+Key features:
+  " Records where data came from
+  " Tracks all transformations
+  " Creates an audit trail
+  " Shows data flow visually
+
+================================================================================
+CONFIGURATION MANAGEMENT (src/config/)
+================================================================================
+
+� manager.py
+-------------
+What it does: Reads and manages your configuration files
+Think of it as: A settings manager
+Key features:
+  " Loads YAML configuration files
+  " Validates settings are correct
+  " Provides defaults for missing values
+  " Makes configuration easy to access
+
+================================================================================
+DATA PIPELINE (src/pipeline/)
+================================================================================
+
+=� stager.py
+------------
+What it does: Prepares data for comparison (staging)
+Think of it as: A prep cook getting ingredients ready
+Key features:
+  " Converts Excel to efficient format
+  " Normalizes column names
+  " Applies data cleaning rules
+  " Creates temporary working copies
+
+ validators.py
+----------------
+What it does: Checks data quality before comparison
+Think of it as: Quality control inspector
+Key features:
+  " Checks for missing values
+  " Verifies data types are correct
+  " Finds duplicate rows
+  " Ensures key columns are unique
+
+=' column_normalizer.py
+-----------------------
+What it does: Makes column names consistent
+Think of it as: A translator making everyone speak the same language
+Key features:
+  " "Customer Name" becomes "customer_name"
+  " Handles special characters
+  " Resolves naming conflicts
+  " Makes matching easier
+
+=� chunked_processor.py
+-----------------------
+What it does: Processes huge files without running out of memory
+Think of it as: Eating an elephant one bite at a time
+Key features:
+  " Reads files in small chunks
+  " Never loads entire file at once
+  " Handles millions of rows easily
+  " Keeps memory usage low
+
+================================================================================
+FILE ADAPTERS (src/adapters/)
+================================================================================
+
+=� file_reader.py
+-----------------
+What it does: Reads different file types (Excel, CSV, Parquet)
+Think of it as: A universal translator for files
+Key features:
+  " Handles Excel (.xlsx, .xls)
+  " Reads CSV files
+  " Supports Parquet (fast format)
+  " Caches files for faster re-reading
+
+================================================================================
+USER INTERFACE (src/ui/)
+================================================================================
+
+=� progress.py
+--------------
+What it does: Shows progress bars and status
+Think of it as: A dashboard showing what's happening
+Key features:
+  " Simple text progress bars
+  " Time estimates for completion
+  " Current operation display
+  " Works on all terminals
+
+<� rich_progress.py
+-------------------
+What it does: Beautiful, colorful progress display
+Think of it as: A fancy dashboard with graphics
+Key features:
+  " Colored progress bars
+  " Live updating display
+  " Multiple progress tracks
+  " Tables and panels for results
+
+=� menu.py
+----------
+What it does: Interactive menu interface for file selection
+Think of it as: A friendly file chooser and comparison launcher
+Key features:
+  " Colored progress bars
+  " Live updating display
+  " Multiple progress tracks
+  " Tables and panels for results
+
+================================================================================
+UTILITIES (src/utils/)
+================================================================================
+
+=� logger.py
+------------
+What it does: Records everything that happens
+Think of it as: A diary keeping notes
+Key features:
+  " Structured logging
+  " Different severity levels
+  " Helps with debugging
+  " Creates audit trail
+
+>� normalizers.py
+-----------------
+What it does: Cleans and standardizes text data
+Think of it as: A data janitor
+Key features:
+  " Removes extra spaces
+  " Fixes special characters
+  " Handles unicode issues
+  " Standardizes formats
+
+=� converters.py
+----------------
+What it does: Converts between data types
+Think of it as: A currency exchanger for data
+Key features:
+  " Converts "$1,234.56" to 1234.56
+  " Handles True/False to t/f
+  " Safely converts types
+  " Handles errors gracefully
+
+=� metrics.py
+-------------
+What it does: Tracks performance and statistics
+Think of it as: A fitness tracker for the pipeline
+Key features:
+  " Measures processing speed
+  " Monitors memory usage
+  " Tracks operation times
+  " Generates performance reports
+
+=� recovery.py
+--------------
+What it does: Saves progress and allows resuming
+Think of it as: A save game feature
+Key features:
+  " Creates checkpoints
+  " Resumes from failures
+  " Tracks completed steps
+  " Prevents lost work
+
+================================================================================
+DATA FLOW - How Data Moves Through the System
+================================================================================
+
+Step 1: INPUT
+-------------
+Your Excel/CSV files � file_reader.py � Raw DataFrames
+
+Step 2: STAGING
+--------------
+Raw DataFrames � stager.py � Cleaned, normalized data in Parquet
+
+Step 3: VALIDATION
+------------------
+Staged data � validators.py � Quality checked and verified
+
+Step 4: COMPARISON
+------------------
+Validated data � comparator.py � Differences identified
+
+Step 5: OUTPUT
+--------------
+Comparison results � Report generators � Excel/CSV reports
+
+================================================================================
+HELPER COMPONENTS
+================================================================================
+
+=� profile_dataset.py
+---------------------
+What it does: Analyzes datasets to understand their structure
+Think of it as: A scout gathering intelligence
+Key features:
+  " Identifies data types
+  " Finds patterns (emails, phones, etc.)
+  " Suggests key columns
+  " Calculates statistics
+
+> smart_matcher.py
+-------------------
+What it does: Automatically matches columns between datasets
+Think of it as: A matchmaker for columns
+Key features:
+  " Uses multiple matching strategies
+  " Provides confidence scores
+  " Handles different column names
+  " Suggests best matches
+
+<� generate_config.py
+--------------------
+What it does: Creates configuration files automatically
+Think of it as: A template generator
+Key features:
+  " Builds YAML configurations
+  " Sets up column mappings
+  " Configures comparisons
+  " Adds appropriate settings
+
+=� generate_test_data.py
+------------------------
+What it does: Creates test datasets for development
+Think of it as: A data factory for testing
+Key features:
+  " Generates datasets of any size
+  " Creates matching pairs
+  " Adds controlled differences
+  " Tests performance limits
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+=� data/
+--------
+  raw/          Your input files go here
+  reports/      Comparison results appear here
+  cached/       Speeds up re-reading files
+  staging/      Temporary files during processing
+  .checkpoints/ Saves progress for resume
+
+=� config/
+----------
+  Where you store your configuration files
+  
+=� src/
+-------
+  All the component code (organized by function)
+  
+=� tests/
+---------
+  Automated tests to ensure everything works
+  
+=� docs/
+--------
+  Documentation (like this file!)
+
+================================================================================
+HOW COMPONENTS WORK TOGETHER - A Real Example
+================================================================================
+
+MENU INTERFACE FLOW:
+When you run: python compare_datasets.py
+
+1. MenuInterface (ui/menu.py) scans data/raw directory
+   �
+2. Shows numbered list of available files
+   �
+3. User selects left and right datasets
+   �
+4. MenuInterface generates config automatically
+   �
+5. Launches DataDiffPipeline with temp config
+   �
+6. Pipeline runs as normal (see below)
+
+COMMAND-LINE FLOW:
+When you run: python main.py datasets.yaml
+
+1. main.py starts and reads datasets.yaml
+   �
+2. ConfigManager (config/manager.py) loads and validates settings
+   �
+3. FileReader (adapters/file_reader.py) reads your Excel/CSV files
+   �
+4. DataStager (pipeline/stager.py) cleans and prepares data
+   �
+5. ColumnNormalizer (pipeline/column_normalizer.py) fixes column names
+   �
+6. ValidationPipeline (pipeline/validators.py) checks data quality
+   �
+7. DataComparator (core/comparator.py) finds differences
+   �
+8. RichProgressMonitor (ui/rich_progress.py) shows progress throughout
+   �
+9. Results saved to data/reports/ folder
+
+If anything fails:
+- RecoveryManager (utils/recovery.py) saves the state
+- You can resume from where it stopped!
+
+================================================================================
+KEY DESIGN PRINCIPLES
+================================================================================
+
+<� SINGLE RESPONSIBILITY
+Each component does ONE thing well
+
+=' MODULARITY
+Components can be swapped or upgraded independently
+
+=� SIZE LIMITS
+No file exceeds 400 lines (most under 300)
+
+>� TESTABILITY
+Every component can be tested in isolation
+
+=� PERFORMANCE
+Handles millions of rows in minutes, not hours
+
+=� MEMORY EFFICIENCY
+Never loads entire dataset into memory at once
+
+= RESUMABILITY
+Can recover from failures and continue
+
+=� OBSERVABILITY
+Complete logging and metrics for monitoring
+
+================================================================================
+SUMMARY - Why This Architecture?
+================================================================================
+
+The modular architecture makes the system:
+
+ RELIABLE: Each piece is simple and well-tested
+ SCALABLE: Handles tiny files to massive datasets
+ MAINTAINABLE: Easy to fix or improve individual parts
+ FLEXIBLE: Can add new features without breaking existing ones
+ EFFICIENT: Optimized for both speed and memory usage
+ USER-FRIENDLY: Clear separation of UI from logic
+
+Think of it like LEGO blocks - each piece is simple, but together they
+build something powerful!
+
+================================================================================
+                          End of Component Layout Guide
+================================================================================

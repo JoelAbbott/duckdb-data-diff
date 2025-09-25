@@ -1,0 +1,28 @@
+# TIER 2/3 VALIDATION - Large Messages Dataset Comparison
+# File Sizes: netsuite_messages (1).csv = 64.5MB, qa2_netsuite_messages.xlsx = 22.7MB
+# Testing: Memory management, chunking logic, hierarchy processing
+
+datasets:
+  # Left dataset - Large CSV file (64.5MB)
+  netsuite_messages_csv:
+    path: "data/raw/netsuite_messages (1).csv"
+    type: "csv"
+    key_columns: ["Internal ID"]
+    
+  # Right dataset - Large Excel file (22.7MB)  
+  qa2_netsuite_messages_xlsx:
+    path: "data/raw/qa2_netsuite_messages.xlsx"
+    type: "excel"
+    key_columns: ["id"]
+    column_map:
+      # Map right columns to left columns for comparison
+      id: "Internal ID"
+      # Additional mappings to be discovered during profiling
+
+comparisons:
+  # Large dataset comparison to test memory management and chunking
+  - left: "netsuite_messages_csv"
+    right: "qa2_netsuite_messages_xlsx"
+    keys: ["Internal ID"]
+    output_format: "csv"
+    max_differences: 10000

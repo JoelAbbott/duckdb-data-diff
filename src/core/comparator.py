@@ -455,7 +455,7 @@ class DataComparator:
                     ) OR
                     (
                         TRY_CAST(l.{norm_col} AS DOUBLE) IS NULL AND
-                        l.{norm_col} != r.{norm_right_col}
+                        TRY_CAST(l.{norm_col} AS VARCHAR) != TRY_CAST(r.{norm_right_col} AS VARCHAR)
                     )
                 )
             """

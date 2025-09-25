@@ -975,72 +975,76 @@ class DataComparator:
             
             where_clause = " OR ".join(comparisons) if comparisons else "FALSE"
             
-            # Build dynamic column selection for the report with filtering
-            # This implements the simplified dynamic filtering approach:
-            # Only include columns that have differences (Status != 'Matched')
-            select_columns = []
+            # Build LONG FORMAT query using UNION ALL to unpivot columns
+            # This converts from wide format (1 row per record) to long format (1 row per difference)
+            # Target structure: [Key, Differing Column, Left Value, Right Value, Difference Type]
             
-            # Add key columns with friendly names (always included)
-            for key in key_columns:
-                norm_key = normalize_column_name(key)
-                # Use the original key name in the header
-                select_columns.append(f'l.{norm_key} AS "{key}"')
+            union_queries = []
             
-            # Create a dynamic columns expression using CASE statements
-            # This conditionally includes value columns only if they have differences
-            dynamic_columns = []
-            
+            # Generate one SELECT statement per value column that has differences
             for col in value_columns:
                 norm_col = normalize_column_name(col)
                 right_col = self._get_right_column(col)
                 norm_right_col = normalize_column_name(right_col)
                 
-                # Build the difference condition using robust comparison logic
+                # Build the robust difference condition for filtering
                 difference_condition = self._build_robust_comparison_condition(
                     norm_col, norm_right_col, export_config
                 ).strip()
                 
-                # Add conditional columns that only appear if there's a difference
-                # Use CASE to conditionally show the column values
-                dynamic_columns.extend([
-                    f"""
-                    CASE 
-                        WHEN {difference_condition} THEN l.{norm_col}
-                        ELSE NULL
-                    END AS "{left_dataset_name} {col}"
-                    """,
-                    f"""
-                    CASE 
-                        WHEN {difference_condition} THEN r.{norm_right_col}
-                        ELSE NULL
-                    END AS "{right_dataset_name} {col}"
-                    """,
-                    f"""
-                    CASE 
-                        WHEN {difference_condition} THEN
-                            CASE 
-                                WHEN l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL THEN 'Missing in Left'
-                                WHEN l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL THEN 'Missing in Right'
-                                ELSE 'Different Values'
-                            END
-                        ELSE NULL
-                    END AS "{col} Status"
-                    """
-                ])
-            
-            # Add the dynamic columns to the select list
-            select_columns.extend(dynamic_columns)
-            
-            select_stmt = ", ".join(select_columns)
-            
-            # Export the differences
-            self.con.execute(f"""
-                COPY (
-                    SELECT {select_stmt}
+                # Build key columns selection for this union query
+                key_selects = []
+                for key in key_columns:
+                    norm_key = normalize_column_name(key)
+                    key_selects.append(f"l.{norm_key}")
+                
+                # Create a SELECT that produces one row for this column if it has differences
+                union_query = f"""
+                    SELECT 
+                        {', '.join(key_selects)} AS "Key",
+                        '{col}' AS "Differing Column",
+                        CAST(l.{norm_col} AS VARCHAR) AS "Left Value",
+                        CAST(r.{norm_right_col} AS VARCHAR) AS "Right Value",
+                        CASE 
+                            WHEN l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL THEN 'Missing in Left'
+                            WHEN l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL THEN 'Missing in Right'
+                            ELSE 'Different Values'
+                        END AS "Difference Type"
                     FROM {left_table} l
                     INNER JOIN {right_table} r ON {key_join}
-                    WHERE {where_clause}
+                    WHERE {difference_condition}
+                """
+                
+                union_queries.append(union_query)
+            
+            # Combine all column queries with UNION ALL
+            if union_queries:
+                # Create the complete long format query
+                long_format_query = " UNION ALL ".join(union_queries)
+                
+                # Add overall limit to the complete query
+                final_query = f"""
+                    SELECT * FROM (
+                        {long_format_query}
+                    ) ORDER BY "Key", "Differing Column"
                     LIMIT {config.max_differences}
+                """
+            else:
+                # No value columns - create empty result with correct structure
+                final_query = f"""
+                    SELECT 
+                        CAST(NULL AS VARCHAR) AS "Key",
+                        CAST(NULL AS VARCHAR) AS "Differing Column", 
+                        CAST(NULL AS VARCHAR) AS "Left Value",
+                        CAST(NULL AS VARCHAR) AS "Right Value",
+                        CAST(NULL AS VARCHAR) AS "Difference Type"
+                    WHERE FALSE
+                """
+            
+            # Export the long format differences
+            self.con.execute(f"""
+                COPY (
+                    {final_query}
                 ) TO '{value_diff_path}' (HEADER, DELIMITER ',')
             """)
             

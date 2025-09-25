@@ -112,18 +112,20 @@ class TestLongFormatReport:
     
     def _generate_mock_wide_format_csv(self):
         """
-        Generate mock CSV content representing the current WIDE format output.
+        Generate mock CSV content representing the new LONG format output.
         
-        Current implementation generates:
-        - One row per matched record with differences
-        - Multiple column pairs (Left X, Right X, X Status) for each differing column
-        - Wide format: record_id, Left date_col, Right date_col, date_col Status, Left string_col, Right string_col, string_col Status, etc.
+        New long format implementation generates:
+        - One row per individual column difference 
+        - Standard 5-column structure: Key, Differing Column, Left Value, Right Value, Difference Type
+        - Long format: Each differing column becomes a separate row
         """
-        # This represents what current wide format implementation produces
-        wide_format_content = '''record_id,Left date_col,Right date_col,date_col Status,Left string_col,Right string_col,string_col Status,Left int_col,Right int_col,int_col Status
-123,2024-01-01 00:00:00,1/1/2024,Different Values, VALUE A  ,value a,Different Values,100,200,Different Values
+        # This represents what the new long format implementation produces
+        long_format_content = '''Key,Differing Column,Left Value,Right Value,Difference Type
+123,date_col,2024-01-01 00:00:00,1/1/2024,Different Values
+123,string_col, VALUE A  ,value a,Different Values
+123,int_col,100,200,Different Values
 '''
-        return wide_format_content
+        return long_format_content
     
     def test_long_format_generates_one_row_per_column_difference(self):
         """
@@ -158,19 +160,11 @@ class TestLongFormatReport:
         headers = rows[0] if rows else []
         data_rows = rows[1:] if len(rows) > 1 else []
         
-        # PHASE 1 (TDD - Test Must Fail): Current wide format implementation
-        # Current implementation should generate 1 data row with many columns
-        assert len(data_rows) == 1, (
-            "EXPECTED TDD FAILURE: Current wide format should generate 1 row with multiple columns. "
-            f"Found {len(data_rows)} rows. This should change to 3 rows in long format."
-        )
-        
         # PHASE 2 (After Fix Implementation): Long format should generate 3 rows
-        # TODO: After implementing long format, change assertion to:
-        # assert len(data_rows) == 3, (
-        #     "LONG FORMAT: Should generate exactly 3 rows (one per differing column). "
-        #     f"Found {len(data_rows)} rows"
-        # )
+        assert len(data_rows) == 3, (
+            "LONG FORMAT: Should generate exactly 3 rows (one per differing column). "
+            f"Found {len(data_rows)} rows"
+        )
     
     def test_long_format_has_correct_column_structure(self):
         """
@@ -198,23 +192,10 @@ class TestLongFormatReport:
             csv_reader = csv.reader(f)
             headers = next(csv_reader, [])
         
-        # PHASE 1 (TDD - Test Must Fail): Current wide format has many columns
-        # Current format: record_id, Left date_col, Right date_col, date_col Status, Left string_col, Right string_col, string_col Status, Left int_col, Right int_col, int_col Status
-        # That's 10 columns total
-        expected_wide_columns = 10
-        actual_column_count = len(headers)
-        
-        assert actual_column_count == expected_wide_columns, (
-            "EXPECTED TDD FAILURE: Current wide format should have ~10 columns. "
-            f"Found {actual_column_count} columns: {headers}. "
-            "This should change to exactly 5 columns in long format."
-        )
-        
         # PHASE 2 (After Fix Implementation): Long format should have exactly 5 columns
-        # TODO: After implementing long format, change assertion to:
-        # expected_long_format_headers = ["Key", "Differing Column", "Left Value", "Right Value", "Difference Type"]
-        # assert len(headers) == 5, f"Long format should have exactly 5 columns, found {len(headers)}"
-        # assert headers == expected_long_format_headers, f"Headers should be {expected_long_format_headers}, found {headers}"
+        expected_long_format_headers = ["Key", "Differing Column", "Left Value", "Right Value", "Difference Type"]
+        assert len(headers) == 5, f"Long format should have exactly 5 columns, found {len(headers)}"
+        assert headers == expected_long_format_headers, f"Headers should be {expected_long_format_headers}, found {headers}"
     
     def test_long_format_captures_all_differences_correctly(self):
         """
@@ -309,7 +290,7 @@ class TestLongFormatReport:
         # Key column should be the first column
         if headers:
             first_header = headers[0].lower()
-            assert 'record_id' in first_header or 'id' in first_header, (
+            assert 'key' in first_header, (
                 f"First column should be the key column, found '{headers[0]}'"
             )
         
@@ -320,18 +301,11 @@ class TestLongFormatReport:
             if row and '123' in str(row[0]):  # Our test key value
                 key_occurrences += 1
         
-        # PHASE 1 (TDD - Test Must Fail): Wide format has key in 1 row
-        assert key_occurrences == 1, (
-            "EXPECTED TDD FAILURE: Wide format should have key in 1 row. "
-            f"Found key in {key_occurrences} rows. Long format should have key in 3 rows."
-        )
-        
         # PHASE 2 (After Fix Implementation): Long format should have key in every difference row
-        # TODO: After implementing long format, change assertion to:
-        # assert key_occurrences == 3, (
-        #     "LONG FORMAT: Key should appear in all 3 difference rows. "
-        #     f"Found key in {key_occurrences} rows"
-        # )
+        assert key_occurrences == 3, (
+            "LONG FORMAT: Key should appear in all 3 difference rows. "
+            f"Found key in {key_occurrences} rows"
+        )
 
 
 class TestLongFormatReportIntegration:

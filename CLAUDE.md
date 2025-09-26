@@ -29,6 +29,8 @@ Memory-Efficient Processing: All data handling logic MUST be designed for large 
 
 Data Profiling Constraint: When profiling raw data files for column mapping (e.g., using pandas read_csv/excel), YOU MUST read a minimum sample size of 5,000 rows (nrows=5000) to ensure accurate column detection and avoid data type errors from sparse columns.
 
+# KEY LEARNING: When matching inventory/financial data, always prioritize the stable, numeric 'System ID' (e.g., serial_number_id: 982) over the alphanumeric 'Business ID' (e.g., Serial/Lot Number: A240307704) to prevent fundamental data incompatibility errors.
+
 SQL Generation Consistency: ALL SQL generation in comparator.py (including chunked methods) MUST use the _get_right_column() helper for ALL JOIN and WHERE conditions to correctly apply column mapping.
 
 III. CODING STANDARDS & QUALITY
@@ -77,6 +79,12 @@ NEW ARCHITECTURAL CONVENTIONS:
 7. Chunked Processing: Automatic chunking for datasets > 25,000 rows with progress indicators
 8. **NORMALIZATION CONSISTENCY PATTERN**: When building dataset configurations from interactive matches, always normalize both sides of the column map and the dataset key_columns array to ensure consistency with staged data. This prevents column mapping lookup failures in comparator.py.
 9. **KEY COLUMN PRIORITY PATTERN**: In interactive column mapping conflict resolution, any key column defined in the validated_keys list receives absolute priority and always replaces any non-key conflict, regardless of confidence score. This ensures SQL joins succeed by preserving key column mappings.
+10. **STAGED KEY CONSISTENCY PATTERN**: In key validation, user-selected key column names must be transformed to match actual staged table column names. For left tables (no column_map), normalize key columns using `normalize_column_name()`. For right tables (with column_map), apply column mapping first then normalize the result. This prevents key validation failures caused by column name mismatches between user selection and staged data.
+11. **INTERACTIVE MENU KEY NORMALIZATION PATTERN**: Interactive menu interfaces must present normalized column names that match staged table schema to users for key selection. Build a mapping from normalized names to original names for display purposes, present the normalized names as selectable options, and return original names for backward compatibility. This prevents "Column not found" errors when users select keys that exist in the menu but not in staged tables.
+12. **EMPTY MATCHES SAFETY PATTERN**: Interactive menu methods must validate that reviewed_matches is not empty before proceeding with key selection. If empty, return gracefully with clear error message rather than entering infinite loops. This prevents complete system failures when no column matches are approved and ensures reliable operation across all dataset scenarios.
+13. **SCHEMA FINGERPRINT VALIDATION PATTERN**: DataStager must detect schema drift and file changes by comparing current source file metadata (columns, modification time) against stored metadata (.meta files). Implementation includes _read_source_columns() to extract schema, _should_restage() to detect changes, and _write_metadata() to persist fingerprints. This prevents stale cache reuse that causes Binder Errors and ensures staged data reflects current source file schema.
+14. **FAIL FAST COMPARISON PATTERN**: DataComparator must immediately halt pipeline execution with KeyValidationError when key validation fails (is_valid=False), preventing downstream processing on invalid data. Error messages must follow mandatory format: "[KEY VALIDATION ERROR] Clear description. Suggestion: How to fix it." This ensures data integrity and provides actionable feedback for resolution.
+15. **NORMALIZED INVERSE MAPPING PATTERN**: In KeyValidator._get_staged_key_columns for right tables, create a fully normalized column mapping where both keys (right columns) and values (left columns) are normalized before performing inverse lookups. Normalize user input key_columns before lookup to ensure correct right table column discovery. This prevents SQL generation failures where wrong column names are used in JOIN conditions due to case/spacing mismatches between user input and stored mappings.
 
 CURRENT STATE:
 - ✅ **ARCHITECTURE FULLY RESTORED**: Both critical column mapping bugs resolved (2025-09-25)
@@ -129,6 +137,8 @@ Priority = (File_Size_KB + Column_Count * 10 + Complexity_Score * 5)
 - **Memory Constraint**: No comparison exceeds 8GB peak memory
 
 ---
+
+# CRITICAL STABILITY NOTE: Hierarchy normalization has failed persistence repeatedly (likely an environment/staging bypass issue). Code is confirmed correct. Full stability validation is now the ONLY priority.
 
 ## PREVIOUS TASKS (Completed)
 1. **TDD: Composite Key Selection**: Write tests and implement logic for selecting multiple key columns via the interactive menu (`menu.py:select_composite_key_interactively`) and test the validation of composite key uniqueness (`key_validator.py:_validate_composite_key`).

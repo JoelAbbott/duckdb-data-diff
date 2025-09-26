@@ -52,8 +52,11 @@ class DataStager:
         """
         staging_path = self.staging_dir / f"{config.name}.parquet"
         
-        # Check if already staged
-        if staging_path.exists() and not force_restage:
+        # Check if restaging is needed (schema drift, file changes, or force)
+        needs_restage = force_restage or self._should_restage(staging_path, config.path, config)
+        
+        # Check if already staged and no restaging needed
+        if staging_path.exists() and not needs_restage:
             logger.info("stager.using_existing",
                        dataset=config.name,
                        path=str(staging_path))
@@ -106,6 +109,9 @@ class DataStager:
             COPY {config.name} TO '{staging_path}' 
             (FORMAT PARQUET, COMPRESSION 'snappy')
         """)
+        
+        # Write metadata for schema drift detection
+        self._write_metadata(staging_path, config.path, config)
         
         # Get final stats
         row_count = con.execute(
@@ -394,3 +400,131 @@ class DataStager:
                    path=str(staging_path))
         
         return staging_path
+    
+    def _read_source_columns(self, source_path: str) -> List[str]:
+        """
+        Read column names from source file for schema drift detection.
+        
+        Args:
+            source_path: Path to source file
+            
+        Returns:
+            List of column names in source file
+        """
+        file_path = Path(source_path)
+        suffix = file_path.suffix.lower()
+        
+        try:
+            if suffix in ['.xlsx', '.xls']:
+                # Read Excel header only
+                df = pd.read_excel(file_path, nrows=0)
+                return df.columns.tolist()
+            elif suffix == '.csv':
+                # Read CSV header only 
+                df = pd.read_csv(file_path, nrows=0)
+                return df.columns.tolist()
+            elif suffix == '.parquet':
+                # Read Parquet schema
+                df = pd.read_parquet(file_path, nrows=0)
+                return df.columns.tolist()
+            else:
+                # Fallback for other formats
+                df = pd.read_csv(file_path, nrows=0)
+                return df.columns.tolist()
+        except Exception as e:
+            logger.warning("stager.schema_read_failed",
+                         path=source_path,
+                         error=str(e))
+            return []
+    
+    def _should_restage(self, staging_path: Path, source_path: str, config: DatasetConfig) -> bool:
+        """
+        Determine if restaging is needed due to schema drift or file changes.
+        
+        Args:
+            staging_path: Path to staged parquet file
+            source_path: Path to source file
+            config: Dataset configuration
+            
+        Returns:
+            True if restaging is needed, False otherwise
+        """
+        metadata_path = staging_path.with_suffix('.meta')
+        
+        # If metadata doesn't exist, assume we need to restage
+        if not metadata_path.exists():
+            return True
+            
+        try:
+            # Read stored metadata
+            with open(metadata_path, 'r') as f:
+                import json
+                metadata = json.load(f)
+            
+            # Get current source file info
+            source_file = Path(source_path)
+            current_mtime = source_file.stat().st_mtime
+            current_columns = self._read_source_columns(source_path)
+            
+            # Check for file modification
+            stored_mtime = metadata.get('source_mtime', 0)
+            if current_mtime > stored_mtime:
+                logger.info("stager.restage_needed.file_modified",
+                           dataset=config.name,
+                           current_mtime=current_mtime,
+                           stored_mtime=stored_mtime)
+                return True
+            
+            # Check for schema drift
+            stored_columns = metadata.get('source_columns', [])
+            if set(current_columns) != set(stored_columns):
+                logger.info("stager.restage_needed.schema_drift",
+                           dataset=config.name,
+                           current_columns=current_columns,
+                           stored_columns=stored_columns)
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.warning("stager.metadata_check_failed",
+                         dataset=config.name,
+                         error=str(e))
+            # If we can't read metadata, assume we need to restage
+            return True
+    
+    def _write_metadata(self, staging_path: Path, source_path: str, config: DatasetConfig):
+        """
+        Write metadata file for schema drift detection.
+        
+        Args:
+            staging_path: Path to staged parquet file
+            source_path: Path to source file  
+            config: Dataset configuration
+        """
+        metadata_path = staging_path.with_suffix('.meta')
+        
+        try:
+            source_file = Path(source_path)
+            current_mtime = source_file.stat().st_mtime
+            current_columns = self._read_source_columns(source_path)
+            
+            metadata = {
+                'source_columns': current_columns,
+                'source_mtime': current_mtime,
+                'dataset_name': config.name,
+                'created_at': pd.Timestamp.now().isoformat()
+            }
+            
+            with open(metadata_path, 'w') as f:
+                import json
+                json.dump(metadata, f, indent=2)
+                
+            logger.debug("stager.metadata_written",
+                        dataset=config.name,
+                        path=str(metadata_path))
+                        
+        except Exception as e:
+            logger.warning("stager.metadata_write_failed",
+                         dataset=config.name,
+                         error=str(e))

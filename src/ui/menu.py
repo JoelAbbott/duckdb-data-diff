@@ -823,29 +823,51 @@ class MenuInterface:
             left_config = self._create_mock_dataset_config(None)  # Left has no mapping
             right_config = self._create_mock_dataset_config(normalized_matches)
             
-            # Instead of using the KeySelector's interactive mode, we'll present
-            # the original column names to the user for selection
-            # This ensures columns like "Internal ID.1" are visible
+            # ARCHITECTURAL FIX: Present normalized column names that match staged tables
+            # This prevents user from selecting column names that don't exist in staged data
             
-            # Get all left columns from the matches (original names)
-            available_keys = [match['left_column'] for match in reviewed_matches]
+            # CRITICAL REGRESSION FIX: Handle empty reviewed_matches to prevent infinite loop
+            if not reviewed_matches:
+                print("❌ No approved column matches found for key selection.")
+                print("Suggestion: Review column mapping and ensure at least one column is approved.")
+                # Return empty list to indicate no key could be selected
+                return []
             
-            # Present key selection with original column names
+            # Build mapping from normalized names to original names for display purposes
+            key_mapping = {}  # normalized_name -> original_name
+            normalized_keys = []  # List of normalized names to present to user
+            
+            for match in reviewed_matches:
+                original_name = match['left_column']
+                normalized_name = normalize_column_name(original_name)
+                key_mapping[normalized_name] = original_name
+                normalized_keys.append(normalized_name)
+            
+            # ADDITIONAL SAFETY CHECK: Ensure we have at least one normalized key
+            if not normalized_keys:
+                print("❌ No valid key columns found after normalization.")
+                print("Suggestion: Check column name normalization and ensure approved columns are valid.")
+                return []
+            
+            # Present key selection with NORMALIZED column names (matching staged tables)
             print("\n" + "="*60)
             print("KEY COLUMN SELECTION")
             print("="*60)
             print("Select a key column for comparison:")
+            print("(Showing normalized names that match staged data)")
             print("")
             
-            for i, column in enumerate(available_keys, 1):
-                print(f"  {i:2}. {column}")
+            for i, normalized_column in enumerate(normalized_keys, 1):
+                original_column = key_mapping[normalized_column]
+                # Show both normalized (for staging) and original (for reference)
+                print(f"  {i:2}. {normalized_column} (from '{original_column}')")
             
             print("")
             
             # Get user selection
             while True:
                 try:
-                    user_input = input(f"Selection [1-{len(available_keys)}]: ").strip()
+                    user_input = input(f"Selection [1-{len(normalized_keys)}]: ").strip()
                     
                     if not user_input:
                         print("Please enter a number.")
@@ -853,14 +875,14 @@ class MenuInterface:
                     
                     choice_index = int(user_input) - 1
                     
-                    if 0 <= choice_index < len(available_keys):
-                        selected_key_original = available_keys[choice_index]
-                        print(f"\n✅ Selected key column: '{selected_key_original}'")
+                    if 0 <= choice_index < len(normalized_keys):
+                        # User selected a normalized key name
+                        selected_key_normalized = normalized_keys[choice_index]
+                        selected_key_original = key_mapping[selected_key_normalized]
                         
-                        # Normalize the key for validation
-                        selected_key_normalized = normalize_column_name(selected_key_original)
+                        print(f"\n✅ Selected key column: '{selected_key_normalized}' (original: '{selected_key_original}')")
                         
-                        # Validate the normalized key
+                        # Validate the normalized key (which matches staged table schema)
                         validation_result = validator.validate_key(
                             table_name=left_table,
                             key_columns=[selected_key_normalized],
@@ -869,14 +891,14 @@ class MenuInterface:
                         
                         if validation_result.is_valid:
                             print(f"✅ Key validation successful")
-                            # Return the ORIGINAL column name, not normalized
+                            # Return the ORIGINAL column name for display purposes and backward compatibility
                             return [selected_key_original]
                         else:
                             print(f"❌ Key validation failed: {validation_result.error_message}")
                             print("Please select a different key.")
                             continue
                     else:
-                        print(f"Invalid selection. Please enter a number between 1 and {len(available_keys)}.")
+                        print(f"Invalid selection. Please enter a number between 1 and {len(normalized_keys)}.")
                         continue
                         
                 except ValueError:

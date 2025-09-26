@@ -6,6 +6,7 @@ Ensures consistent text comparison regardless of encoding variations.
 import unicodedata
 import re
 from typing import Optional
+import pandas as pd
 
 
 def normalize_text_for_comparison(text: Optional[str]) -> Optional[str]:
@@ -154,8 +155,6 @@ def create_normalized_comparison_sql(left_col: str, right_col: str) -> str:
     return f"{left_normalized} = {right_normalized}"
 
 
-# Import pandas here to avoid circular imports
-import pandas as pd
 
 
 def normalize_dataframe_text(df: pd.DataFrame, columns: list = None) -> pd.DataFrame:

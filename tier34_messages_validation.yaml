@@ -1,0 +1,31 @@
+# TIER 3/4 VALIDATION - Large Message Datasets with Memory Management
+# Testing: Chunked processing, memory optimization, large file handling
+
+datasets:
+  # Left dataset - Large NetSuite Messages CSV (64.5 MB)
+  netsuite_messages_large:
+    path: "data/raw/netsuite_messages (1).csv"
+    type: "csv"
+    key_columns: ["Internal ID"]
+    
+  # Right dataset - Large QA2 NetSuite Messages Excel (22.7 MB)  
+  qa2_netsuite_messages_large:
+    path: "data/raw/qa2_netsuite_messages.xlsx"
+    type: "excel"
+    key_columns: ["id"]
+    column_map:
+      # Map right columns to left columns for comparison
+      id: "Internal ID"
+      # Additional mappings for message data
+      author: "from"
+      subject: "subject" 
+      is_incoming: "is_incoming"
+      is_emailed: "emailed"
+
+comparisons:
+  # Large dataset comparison with chunked processing validation
+  - left: "netsuite_messages_large"
+    right: "qa2_netsuite_messages_large"
+    keys: ["Internal ID"]
+    output_format: "csv"
+    max_differences: 5000

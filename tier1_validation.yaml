@@ -1,0 +1,25 @@
+# TIER 1 VALIDATION - Simple Baseline Comparison
+# Testing: Basic pipeline functionality with smallest available dataset
+
+datasets:
+  # Smallest available dataset - NetSuite Department (Tier 1 classification)
+  netsuite_department_simple:
+    path: "data/raw/netsuite_department (2).csv"
+    type: "csv"
+    key_columns: ["Internal ID"]
+    
+  qa2_netsuite_department_simple:
+    path: "data/raw/qa2_netsuite_department.xlsx"
+    type: "excel" 
+    key_columns: ["id"]
+    column_map:
+      # Basic column mapping for Tier 1 validation
+      id: "Internal ID"
+
+comparisons:
+  # Tier 1 baseline comparison
+  - left: "netsuite_department_simple"
+    right: "qa2_netsuite_department_simple"
+    keys: ["Internal ID"]
+    output_format: "csv"
+    max_differences: 100

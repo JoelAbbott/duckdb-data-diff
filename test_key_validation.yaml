@@ -1,0 +1,26 @@
+# KEY VALIDATION TEST - Inventory Balance with Duplicate Serial/Lot Numbers
+# Testing: Mandatory key uniqueness validation enforcement
+
+datasets:
+  # Left dataset - NetSuite Inventory Balance  
+  netsuite_inventory_balance_test:
+    path: "data/raw/netsuite_inventory_balance (1).csv"
+    type: "csv"
+    key_columns: ["serial_lot_number"]
+    
+  # Right dataset - QA2 NetSuite Inventory Balance
+  qa2_netsuite_inventory_balance_test:
+    path: "data/raw/qa2_netsuite_inventory_balance.xlsx"
+    type: "excel"
+    key_columns: ["serial_number_id"]
+    column_map:
+      # Map right columns to left columns - right serial_number_id maps to left serial_lot_number
+      serial_number_id: "serial_lot_number"
+
+comparisons:
+  # This comparison MUST FAIL with KEY VALIDATION ERROR due to duplicates
+  - left: "netsuite_inventory_balance_test"
+    right: "qa2_netsuite_inventory_balance_test"
+    keys: ["serial_lot_number"]
+    output_format: "csv"
+    max_differences: 100

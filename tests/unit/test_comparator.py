@@ -222,3 +222,220 @@ class TestDataComparatorExistingFunctionality:
         assert result.only_in_left == 100
         assert result.only_in_right == 50
         assert result.value_differences == 25
+
+
+class TestDataComparatorStagedKeyPropagation:
+    """Test cases for staged key propagation from KeyValidator to DataComparator."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        # Mock DuckDB connection
+        self.mock_con = Mock()
+        
+        # Create DataComparator instance
+        self.comparator = DataComparator(self.mock_con)
+        
+        # Mock configuration
+        self.mock_config = Mock(spec=ComparisonConfig)
+        self.mock_config.comparison_keys = []  # Empty to use provided keys
+        self.mock_config.value_columns = []
+        self.mock_config.tolerance = 0.01
+        
+        # Mock dataset configs
+        self.mock_left_config = Mock()
+        self.mock_left_config.column_map = None  # Left table (no column mapping)
+        
+        self.mock_right_config = Mock()
+        self.mock_right_config.column_map = {'staged_key': 'user_key'}  # Right table mapping
+        
+    def test_comparator_uses_discovered_staged_keys(self):
+        """
+        Test that DataComparator uses discovered staged key names for SQL generation.
+        
+        CRITICAL BUG REPRODUCTION:
+        - User selects 'user_key' as key column in interactive mode
+        - KeyValidator discovers actual staged column name is 'staged_key'
+        - DataComparator must use 'staged_key' for all SQL generation, not 'user_key'
+        - This prevents "Binder Error: Referenced column 'user_key' not found"
+        
+        This test MUST FAIL until staged key propagation is implemented.
+        """
+        # Arrange: Mock KeyValidator to simulate key discovery behavior
+        # KeyValidator should find that 'user_key' maps to 'staged_key' in the staged table
+        mock_validation_result = Mock()
+        mock_validation_result.is_valid = True
+        mock_validation_result.discovered_keys = ['staged_key']  # NEW: discovered staged column names
+        
+        # Mock row counts
+        self.mock_con.execute.return_value.fetchone.return_value = [1000]
+        
+        # Mock SQL generation methods to capture what keys are actually used
+        captured_sql_calls = []
+        
+        def mock_execute(sql):
+            captured_sql_calls.append(sql)
+            mock_result = Mock()
+            mock_result.fetchone.return_value = [1000]
+            mock_result.fetchall.return_value = [('staged_key',), ('column1',), ('column2',)]
+            return mock_result
+        
+        self.mock_con.execute = mock_execute
+        
+        # Mock KeyValidator to return discovered keys
+        with patch('src.core.comparator.KeyValidator') as mock_validator_class:
+            mock_validator = Mock()
+            mock_validator.validate_key.return_value = mock_validation_result
+            mock_validator_class.return_value = mock_validator
+            
+            # Mock other internal methods to focus on key propagation
+            with patch.object(self.comparator, '_determine_value_columns', return_value=['column1']), \
+                 patch.object(self.comparator, '_find_matches', return_value=0) as mock_find_matches, \
+                 patch.object(self.comparator, '_find_only_in_left', return_value=0), \
+                 patch.object(self.comparator, '_find_only_in_right', return_value=0), \
+                 patch.object(self.comparator, '_find_value_differences', return_value=0):
+                
+                # Act: Call compare with user-selected key
+                result = self.comparator.compare(
+                    left_table="test_left_table",
+                    right_table="test_right_table", 
+                    config=self.mock_config,
+                    left_dataset_config=self.mock_left_config,
+                    right_dataset_config=self.mock_right_config,
+                    validated_keys=["user_key"]  # User-selected key that needs discovery
+                )
+        
+        # Assert: DataComparator should use discovered staged key names, not user-selected names
+        # The _find_matches method should be called with the discovered staged key
+        mock_find_matches.assert_called_once_with(
+            "test_left_table",
+            "test_right_table", 
+            ["staged_key"]  # Should use discovered key, not "user_key"
+        )
+        
+        # Assert: Result should contain the discovered staged key names
+        assert result.key_columns == ["staged_key"], f"Expected discovered key 'staged_key', got {result.key_columns}"
+        
+        # This test documents the EXACT failure we need to fix:
+        # DataComparator must propagate discovered staged key names from KeyValidator
+        # to all subsequent SQL generation methods
+
+
+class TestDataComparatorFailFast:
+    """Test cases for DataComparator fail fast comparison pattern."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        # Mock DuckDB connection
+        self.mock_con = Mock()
+        
+        # Create DataComparator instance
+        self.comparator = DataComparator(self.mock_con)
+        
+        # Mock configuration
+        self.mock_config = Mock(spec=ComparisonConfig)
+        self.mock_config.comparison_keys = []  # Empty to trigger key determination
+        self.mock_config.value_columns = []
+        self.mock_config.tolerance = 0.01
+        
+        # Mock dataset configs
+        self.mock_left_config = Mock()
+        self.mock_left_config.column_map = None
+        
+        self.mock_right_config = Mock()
+        self.mock_right_config.column_map = None
+        
+        # Mock database responses for row counts and columns
+        self.mock_con.execute.return_value.fetchone.return_value = [1000]  # Row count
+        self.mock_con.execute.return_value.fetchall.return_value = [
+            ('user_key',), ('column1',), ('column2',)
+        ]  # Column list
+    
+    def test_compare_fails_fast_on_key_validation_failure(self):
+        """
+        Test that DataComparator.compare() immediately raises KeyValidationError
+        when key validation fails, implementing the FAIL FAST COMPARISON PATTERN.
+        
+        This test verifies two scenarios:
+        1. Left dataset key validation fails -> immediate KeyValidationError
+        2. Right dataset key validation fails -> immediate KeyValidationError
+        """
+        from src.core.key_validator import KeyValidationError, KeyValidationResult
+        
+        # Mock _determine_keys to return test keys
+        with patch.object(self.comparator, '_determine_keys', return_value=['duplicate_key']):
+            
+            # Scenario 1: Left validation fails
+            mock_validator = Mock()
+            mock_left_validation = KeyValidationResult(
+                is_valid=False,
+                total_rows=100,
+                unique_values=95,
+                duplicate_count=5,
+                discovered_keys=['duplicate_key'],
+                error_message="Duplicate keys found"
+            )
+            mock_right_validation = KeyValidationResult(
+                is_valid=True,
+                total_rows=100,
+                unique_values=100,
+                duplicate_count=0,
+                discovered_keys=['duplicate_key'],
+                error_message=None
+            )
+            
+            mock_validator.validate_key.side_effect = [mock_left_validation, mock_right_validation]
+            
+            with patch('src.core.comparator.KeyValidator', return_value=mock_validator):
+                # This should raise KeyValidationError immediately - no further processing
+                with pytest.raises(KeyValidationError) as exc_info:
+                    self.comparator.compare(
+                        left_table="left_table",
+                        right_table="right_table",
+                        config=self.mock_config,
+                        left_dataset_config=self.mock_left_config,
+                        right_dataset_config=self.mock_right_config
+                    )
+                
+                # Verify error message format matches CLAUDE.md mandatory format
+                error_msg = str(exc_info.value)
+                assert "[KEY VALIDATION ERROR]" in error_msg
+                assert "left dataset" in error_msg
+                assert "Suggestion:" in error_msg
+                
+            # Scenario 2: Right validation fails  
+            mock_validator.reset_mock()
+            mock_left_validation_success = KeyValidationResult(
+                is_valid=True,
+                total_rows=100,
+                unique_values=100,
+                duplicate_count=0,
+                discovered_keys=['duplicate_key'],
+                error_message=None
+            )
+            mock_right_validation_fail = KeyValidationResult(
+                is_valid=False,
+                total_rows=100,
+                unique_values=97,
+                duplicate_count=3,
+                discovered_keys=['duplicate_key'],
+                error_message="Duplicate keys found"
+            )
+            
+            mock_validator.validate_key.side_effect = [mock_left_validation_success, mock_right_validation_fail]
+            
+            with patch('src.core.comparator.KeyValidator', return_value=mock_validator):
+                # This should also raise KeyValidationError immediately
+                with pytest.raises(KeyValidationError) as exc_info:
+                    self.comparator.compare(
+                        left_table="left_table",
+                        right_table="right_table", 
+                        config=self.mock_config,
+                        left_dataset_config=self.mock_left_config,
+                        right_dataset_config=self.mock_right_config
+                    )
+                
+                # Verify error message format for right dataset
+                error_msg = str(exc_info.value)
+                assert "[KEY VALIDATION ERROR]" in error_msg
+                assert "right dataset" in error_msg
+                assert "Suggestion:" in error_msg

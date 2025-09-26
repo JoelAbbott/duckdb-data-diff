@@ -12,6 +12,7 @@ from pathlib import Path
 from ..utils.logger import get_logger
 from ..config.manager import ComparisonConfig
 from ..utils.normalizers import normalize_column_name
+from .key_validator import KeyValidator, KeyValidationError
 
 
 logger = get_logger()
@@ -94,6 +95,62 @@ class DataComparator:
         else:
             key_columns = self._determine_keys(left_table, right_table, config)
         result.key_columns = key_columns
+        
+        # MANDATORY PRE-COMPARISON KEY UNIQUENESS VALIDATION
+        # Enforce data integrity - fail fast if key columns contain duplicates
+        validator = KeyValidator(self.con)
+        
+        try:
+            # Validate left table key uniqueness
+            left_validation = validator.validate_key(left_table, key_columns, left_dataset_config)
+            if not left_validation.is_valid:
+                error_msg = f"[KEY VALIDATION ERROR] Duplicates found in key column(s) {key_columns} in left dataset '{left_table}'. Found {left_validation.duplicate_count} duplicates. Suggestion: Use a composite key or clean source data."
+                logger.error("comparator.key_validation_failed", 
+                           table=left_table, 
+                           key_columns=key_columns,
+                           duplicates=left_validation.duplicate_count)
+                raise KeyValidationError(error_msg)
+            
+            # Validate right table key uniqueness  
+            right_validation = validator.validate_key(right_table, key_columns, right_dataset_config)
+            if not right_validation.is_valid:
+                error_msg = f"[KEY VALIDATION ERROR] Duplicates found in key column(s) {key_columns} in right dataset '{right_table}'. Found {right_validation.duplicate_count} duplicates. Suggestion: Use a composite key or clean source data."
+                logger.error("comparator.key_validation_failed",
+                           table=right_table,
+                           key_columns=key_columns, 
+                           duplicates=right_validation.duplicate_count)
+                raise KeyValidationError(error_msg)
+                
+            # STAGED KEY PROPAGATION: Use discovered staged column names for all subsequent operations
+            # This prevents "Binder Error: Referenced column not found" in SQL generation
+            original_key_columns = key_columns  # Store original before update
+            discovered_left_keys = left_validation.discovered_keys
+            discovered_right_keys = right_validation.discovered_keys
+            
+            # Update key_columns to use the discovered left table keys as canonical names
+            # This ensures consistent SQL generation throughout the comparison pipeline
+            key_columns = discovered_left_keys
+            result.key_columns = discovered_left_keys  # Update result to reflect discovered keys
+            
+            logger.info("comparator.key_validation_passed",
+                       left_table=left_table,
+                       right_table=right_table,
+                       original_key_columns=original_key_columns,
+                       discovered_left_keys=discovered_left_keys,
+                       discovered_right_keys=discovered_right_keys)
+                       
+            # Store discovered keys for SQL generation methods that need table-specific column names
+            self.discovered_left_keys = discovered_left_keys
+            self.discovered_right_keys = discovered_right_keys
+                       
+        except KeyValidationError:
+            # Re-raise KeyValidationError to halt comparison
+            raise
+        except Exception as e:
+            # Handle unexpected validation errors
+            error_msg = f"[KEY VALIDATION ERROR] Failed to validate key uniqueness: {str(e)}. Suggestion: Check key column names and table structure."
+            logger.error("comparator.key_validation_error", error=str(e))
+            raise KeyValidationError(error_msg)
         
         if not key_columns:
             logger.error("comparator.no_keys")
@@ -343,7 +400,8 @@ class DataComparator:
                         right_mapped=right_col,
                         right_normalized=right_norm)
             
-            key_conditions.append(f"l.{left_norm} = r.{right_norm}")
+            # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
+            key_conditions.append(f"TRIM(TRY_CAST(l.{left_norm} AS VARCHAR)) = TRIM(TRY_CAST(r.{right_norm} AS VARCHAR))")
         
         key_join = " AND ".join(key_conditions)
         
@@ -369,9 +427,9 @@ class DataComparator:
         Find rows only in left dataset.
         """
         # BUG 3 fix: Use column mapping for join conditions with normalized columns
-        # Normalize key columns to match staged table format
+        # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
         key_join = " AND ".join([
-            f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+            f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
             for col in key_columns
         ])
         
@@ -401,9 +459,9 @@ class DataComparator:
         Find rows only in right dataset.
         """
         # BUG 3 fix: Use column mapping for join conditions with normalized columns
-        # Normalize key columns to match staged table format
+        # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
         key_join = " AND ".join([
-            f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+            f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
             for col in key_columns
         ])
         
@@ -696,8 +754,9 @@ class DataComparator:
             chunk_num += 1
             
             # BUG 3 fix: Use column mapping for join conditions with normalized columns
+            # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
             key_join = " AND ".join([
-                f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+                f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
                 for col in key_columns
             ])
             
@@ -752,8 +811,9 @@ class DataComparator:
             chunk_num += 1
             
             # BUG 3 fix: Use column mapping for join conditions with proper quoting
+            # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
             key_join = " AND ".join([
-                f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+                f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
                 for col in key_columns
             ])
             right_key_col = normalize_column_name(self._get_right_column(key_columns[0]))
@@ -811,8 +871,9 @@ class DataComparator:
             chunk_num += 1
             
             # BUG 3 fix: Use column mapping for join conditions with normalized columns
+            # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
             key_join = " AND ".join([
-                f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+                f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
                 for col in key_columns
             ])
             
@@ -909,9 +970,9 @@ class DataComparator:
             )
         
         # BUG 3 fix: Use column mapping for join conditions with normalized columns
-        # Normalize key columns to match staged table format
+        # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
         key_join = " AND ".join([
-            f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+            f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
             for col in key_columns
         ])
         
@@ -1086,8 +1147,9 @@ class DataComparator:
         right_count = self._get_row_count(right_table)
         
         # Get match statistics using normalized keys
+        # Robust type coercion with mandatory trim: Cast to VARCHAR and remove whitespace
         key_join = " AND ".join([
-            f"l.{normalize_column_name(col)} = r.{normalize_column_name(self._get_right_column(col))}" 
+            f"TRIM(TRY_CAST(l.{normalize_column_name(col)} AS VARCHAR)) = TRIM(TRY_CAST(r.{normalize_column_name(self._get_right_column(col))} AS VARCHAR))" 
             for col in key_columns
         ])
         

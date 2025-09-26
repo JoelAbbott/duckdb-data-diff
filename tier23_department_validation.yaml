@@ -1,0 +1,37 @@
+# TIER 2/3 VALIDATION - Full Department Dataset with Hierarchy Normalizer
+# Testing: Full column mapping + strip_hierarchy normalizer stability
+
+datasets:
+  # Left dataset - NetSuite Department with strip_hierarchy normalizer
+  netsuite_department:
+    path: "data/raw/netsuite_department (2).csv"
+    type: "csv"
+    key_columns: ["Internal ID"]
+    normalizers:
+      Name: "strip_hierarchy"
+      "Full Name": "strip_hierarchy"
+    
+  # Right dataset - QA2 NetSuite Department with full column mapping
+  qa2_netsuite_department:
+    path: "data/raw/qa2_netsuite_department.xlsx"
+    type: "excel"
+    key_columns: ["id"]
+    column_map:
+      # Map right columns to left columns for comparison
+      id: "Internal ID"
+      department_name: "Name"
+      department_full_name: "Full Name"
+      is_department_include_children: "Include Children"
+      is_department_inactive: "Department is Inactive"
+      last_modified_date: "Last Modified Date"
+    normalizers:
+      department_name: "strip_hierarchy"
+      department_full_name: "strip_hierarchy"
+
+comparisons:
+  # Full department comparison with hierarchy normalizer testing
+  - left: "netsuite_department"
+    right: "qa2_netsuite_department"
+    keys: ["Internal ID"]
+    output_format: "csv"
+    max_differences: 1000

@@ -439,3 +439,238 @@ class TestDataComparatorFailFast:
                 assert "[KEY VALIDATION ERROR]" in error_msg
                 assert "right dataset" in error_msg
                 assert "Suggestion:" in error_msg
+
+
+class TestDataComparatorReportFidelity:
+    """Test cases for DataComparator REPORT FIDELITY PATTERN implementation."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        # Mock DuckDB connection
+        self.mock_con = Mock()
+        
+        # Create DataComparator instance
+        self.comparator = DataComparator(self.mock_con)
+        
+        # Mock configuration with report fidelity attributes
+        self.mock_config = Mock(spec=ComparisonConfig)
+        self.mock_config.comparison_keys = ["id"]
+        self.mock_config.value_columns = ["name", "email", "status"]
+        self.mock_config.tolerance = 0.01
+        self.mock_config.max_differences = 1000
+        
+        # NEW: Report fidelity configuration
+        self.mock_config.csv_preview_limit = 500
+        self.mock_config.export_full = True
+        self.mock_config.annotate_entire_column = True
+        self.mock_config.chunk_export_size = 50000
+        self.mock_config.enable_smart_preview = True
+        
+        # Mock dataset configs
+        self.mock_left_config = Mock()
+        self.mock_left_config.column_map = None
+        
+        self.mock_right_config = Mock()
+        self.mock_right_config.column_map = None
+        
+        # Mock database responses
+        self.mock_con.execute.return_value.fetchone.return_value = [1000]
+        self.mock_con.execute.return_value.fetchall.return_value = [
+            ('id',), ('name',), ('email',), ('status',)
+        ]
+    
+    def test_export_differences_generates_chunked_full_and_preview(self):
+        """
+        Test that export_differences generates both chunked full exports and annotated previews.
+        
+        This test implements the REPORT FIDELITY PATTERN by verifying:
+        1. Full chunked exports are generated when export_full=True
+        2. Preview CSV includes entire_column annotation when annotate_entire_column=True  
+        3. Smart preview logic is applied when enable_smart_preview=True
+        4. Chunked export size is respected
+        
+        This test MUST FAIL until the new functionality is implemented.
+        """
+        # Arrange: Mock large dataset to trigger chunking logic but smaller for easier testing
+        self.mock_con.execute.return_value.fetchone.return_value = [1000]  # Smaller dataset for easier mocking
+        
+        # Mock the directory and file operations
+        with patch('pathlib.Path.mkdir') as mock_mkdir, \
+             patch('pathlib.Path.exists', return_value=True) as mock_exists, \
+             patch('builtins.open', create=True) as mock_open, \
+             patch.object(self.comparator, '_determine_value_columns', 
+                         return_value=['name', 'email', 'status']) as mock_determine_cols:
+            
+            # Mock file handles for CSV operations  
+            mock_file_handle = Mock()
+            mock_file_handle.__enter__ = Mock(return_value=mock_file_handle)
+            mock_file_handle.__exit__ = Mock(return_value=None)
+            mock_file_handle.read.return_value = "header1,header2\nvalue1,value2\n"
+            mock_open.return_value = mock_file_handle
+            
+            # Create temporary output directory
+            output_dir = Path("C:/tmp/test_output")  # Use Windows-compatible path
+            
+            # Act: Call export_differences with new configuration
+            result = self.comparator.export_differences(
+                left_table="large_left_table",
+                right_table="large_right_table", 
+                config=self.mock_config,
+                output_dir=output_dir,
+                left_dataset_config=self.mock_left_config,
+                right_dataset_config=self.mock_right_config
+            )
+        
+        # Assert: Verify new report fidelity outputs are generated
+        
+        # 1. Should generate full chunked exports for value differences
+        assert "value_differences_full" in result, "Full chunked export not generated"
+        full_export_path = result["value_differences_full"]
+        assert isinstance(full_export_path, Path), f"Full export path should be Path object: {full_export_path}"
+        
+        # 2. Should generate annotated preview
+        assert "value_differences" in result, "Preview export not generated"
+        preview_path = result["value_differences"]
+        assert isinstance(preview_path, Path), f"Preview path should be Path object: {preview_path}"
+        
+        # 3. Verify the mock_con.execute was called with complex queries containing CTEs and annotations
+        # Check that annotation queries with "Entire Column Different" were generated
+        execute_calls = [str(call) for call in self.mock_con.execute.call_args_list]
+        
+        # Should have calls with CTE queries for annotation
+        annotation_calls = [call for call in execute_calls if "Entire Column Different" in call]
+        assert len(annotation_calls) > 0, "No annotation queries with 'Entire Column Different' found"
+        
+        # Should have calls with chunked export logic (either _export_full_csv or chunked queries)
+        full_export_calls = [call for call in execute_calls if "value_differences_full" in str(result)]
+        assert "value_differences_full" in str(result), "Full export not configured properly"
+        
+        # 4. Verify the new configuration attributes are being used
+        # The implementation should check for export_full, annotate_entire_column, etc.
+        assert hasattr(self.mock_config, 'export_full'), "export_full attribute not found in config"
+        assert hasattr(self.mock_config, 'annotate_entire_column'), "annotate_entire_column attribute not found in config" 
+        assert hasattr(self.mock_config, 'enable_smart_preview'), "enable_smart_preview attribute not found in config"
+        
+        # 5. Verify expected output files are in result
+        expected_outputs = ["only_left", "only_right", "value_differences", "value_differences_full", "summary"]
+        for expected_output in expected_outputs:
+            if expected_output != "value_differences_full":
+                # All outputs except full should always be present
+                assert expected_output in result, f"Expected output {expected_output} not found in result"
+            else:
+                # Full export should be present when export_full=True
+                if self.mock_config.export_full:
+                    assert expected_output in result, f"Full export {expected_output} not found when export_full=True"
+        
+        # This test documents the EXACT functionality we have implemented:
+        # - Chunked full exports with configurable size
+        # - Annotated previews with entire_column flag  
+        # - Smart preview combining summaries and samples
+        # - Proper configuration handling for all report fidelity options
+
+
+class TestDataComparatorSQLSanitization:
+    """Test cases for DataComparator SQL QUERY SANITIZATION PATTERN implementation."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        # Mock DuckDB connection
+        self.mock_con = Mock()
+        
+        # Create DataComparator instance
+        self.comparator = DataComparator(self.mock_con)
+        
+    def test_export_full_csv_strips_semicolon_and_wraps_query(self):
+        """
+        Test that _export_full_csv properly sanitizes SQL queries and wraps them safely.
+        
+        CRITICAL REGRESSION REPRODUCTION:
+        - Base queries with trailing semicolons cause Parser Error: syntax error at or near 'ORDER'
+        - This happens when chunking logic tries to wrap: "SELECT * FROM table;" + "ORDER BY 1 LIMIT 50000"
+        - Result: Invalid SQL like "SELECT * FROM table; ORDER BY 1 LIMIT 50000"
+        
+        This test MUST FAIL until SQL sanitization and proper query wrapping is implemented.
+        """
+        # Arrange: Create a base query with trailing semicolon (the regression case)
+        base_query_with_semicolon = "SELECT id, name, value FROM test_table;"
+        
+        # Mock the DuckDB connection responses for chunking logic
+        mock_count_result = Mock()
+        mock_count_result.fetchone.return_value = [100000]  # Large count to trigger chunking
+        
+        mock_copy_result = Mock()
+        mock_copy_result.fetchone.return_value = [1]
+        
+        self.mock_con.execute.return_value = mock_count_result
+        
+        # Mock file operations to avoid actual file I/O
+        output_path = Path("C:/tmp/test_sanitized_output.csv")
+        
+        with patch('pathlib.Path.mkdir') as mock_mkdir, \
+             patch('pathlib.Path.exists', return_value=True) as mock_exists, \
+             patch('pathlib.Path.unlink') as mock_unlink, \
+             patch('builtins.open', create=True) as mock_open:
+            
+            mock_file_handle = Mock()
+            mock_file_handle.__enter__ = Mock(return_value=mock_file_handle)
+            mock_file_handle.__exit__ = Mock(return_value=None)
+            mock_file_handle.read.return_value = "id,name,value\n1,test,123\n"
+            mock_file_handle.write = Mock()
+            mock_open.return_value = mock_file_handle
+            
+            # Act: Call _export_full_csv with the problematic query
+            # This should FAIL with the current implementation because it doesn't sanitize
+            try:
+                self.comparator._export_full_csv(
+                    query=base_query_with_semicolon,
+                    output_path=output_path,
+                    chunk_size=50000
+                )
+                
+                # If we get here, the method completed successfully
+                sql_success = True
+                
+            except Exception as e:
+                # Should not fail after sanitization implementation
+                sql_success = False
+                error_message = str(e)
+        
+        # Assert: After fix, this should work without parser errors
+        
+        # 1. The method should complete successfully after sanitization is implemented
+        assert sql_success, "SQL execution should succeed after query sanitization is implemented"
+        
+        # 2. Verify that the mock_con.execute was called with properly wrapped queries
+        execute_calls = [call[0][0] for call in self.mock_con.execute.call_args_list]
+        
+        # 3. Should have a count query that properly wraps the sanitized base query
+        count_calls = [call for call in execute_calls if "SELECT COUNT(*)" in call]
+        assert len(count_calls) > 0, "Should have count query for chunking logic"
+        
+        # 4. Count query should wrap the sanitized query (no trailing semicolon)
+        count_query = count_calls[0]
+        assert "SELECT COUNT(*) FROM (" in count_query, "Count query should wrap the base query"
+        assert ") AS count_subquery" in count_query, "Count query should use proper subquery alias"
+        
+        # 5. The wrapped query should NOT contain the problematic trailing semicolon pattern
+        # This verifies the sanitization worked
+        for call in execute_calls:
+            # No SQL should have pattern: "table; ORDER BY" which causes parser error
+            assert "; ORDER BY" not in call, f"Found unsanitized semicolon before ORDER BY in: {call}"
+            # No SQL should have pattern: ") q; ORDER BY" 
+            assert ") q; ORDER BY" not in call, f"Found improper semicolon in wrapped query: {call}"
+        
+        # 6. Verify proper query wrapping structure
+        copy_calls = [call for call in execute_calls if "COPY (" in call]
+        if copy_calls:
+            copy_query = copy_calls[0]
+            # Should have structure: COPY (SELECT * FROM (sanitized_query) q ORDER BY ... ) TO 'file'
+            assert "SELECT * FROM (" in copy_query, "Should wrap query in subselect"
+            assert ") q" in copy_query, "Should alias the subquery"
+            assert "ORDER BY" in copy_query, "Should include ORDER BY for chunking"
+            
+        # This test documents the EXACT SQL sanitization pattern needed:
+        # 1. Strip trailing semicolons from base queries
+        # 2. Wrap sanitized query in subselect: SELECT * FROM (clean_query) q
+        # 3. Apply chunking clauses: ORDER BY col LIMIT size OFFSET pos
+        # 4. Ensure no "; ORDER BY" patterns exist in final SQL

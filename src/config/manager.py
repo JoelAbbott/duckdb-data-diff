@@ -50,6 +50,21 @@ class ComparisonConfig:
     ignore_spaces: bool = True
     output_format: str = "excel"
     max_differences: int = 1000
+    
+    # Report Fidelity Pattern attributes (backward-compatible defaults)
+    csv_preview_limit: int = 1000
+    entire_column_sample_size: int = 10
+    collapse_entire_column_in_preview: bool = False
+    # NOTE: collapse_entire_column_in_full REMOVED - collapse is now permanent for all full exports
+    export_rowlevel_audit_full: bool = False
+    zip_large_exports: bool = False
+    preview_order: List[str] = field(default_factory=lambda: ["Differing Column", "Key"])
+    
+    # Existing Report Fidelity Pattern attributes
+    export_full: bool = True
+    annotate_entire_column: bool = True
+    chunk_export_size: int = 50000
+    enable_smart_preview: bool = True
 
 
 class ConfigManager:
@@ -130,6 +145,12 @@ class ConfigManager:
         
         for cmp in self.config["comparisons"]:
             try:
+                # Check for deprecated flags and warn
+                if "collapse_entire_column_in_full" in cmp:
+                    logger.warning("config.deprecated_flag", 
+                                 flag="collapse_entire_column_in_full",
+                                 message="collapse_entire_column_in_full is deprecated - full exports are now always collapsed. Use export_rowlevel_audit_full=true for complete row-level detail.")
+                
                 comparison_cfg = ComparisonConfig(
                     left_dataset=cmp.get("left"),
                     right_dataset=cmp.get("right"),
@@ -139,7 +160,20 @@ class ConfigManager:
                     ignore_case=cmp.get("ignore_case", True),
                     ignore_spaces=cmp.get("ignore_spaces", True),
                     output_format=cmp.get("output_format", "excel"),
-                    max_differences=cmp.get("max_differences", 1000)
+                    max_differences=cmp.get("max_differences", 1000),
+                    # Report Fidelity Pattern attributes (backward-compatible defaults)
+                    csv_preview_limit=cmp.get("csv_preview_limit", 1000),
+                    entire_column_sample_size=cmp.get("entire_column_sample_size", 10),
+                    collapse_entire_column_in_preview=cmp.get("collapse_entire_column_in_preview", False),
+                    # NOTE: collapse_entire_column_in_full removed - collapse is now permanent
+                    export_rowlevel_audit_full=cmp.get("export_rowlevel_audit_full", False),
+                    zip_large_exports=cmp.get("zip_large_exports", False),
+                    preview_order=cmp.get("preview_order", ["Differing Column", "Key"]),
+                    # Existing Report Fidelity Pattern attributes  
+                    export_full=cmp.get("export_full", True),
+                    annotate_entire_column=cmp.get("annotate_entire_column", True),
+                    chunk_export_size=cmp.get("chunk_export_size", 50000),
+                    enable_smart_preview=cmp.get("enable_smart_preview", True)
                 )
                 self.comparisons.append(comparison_cfg)
             except Exception as e:
@@ -206,7 +240,20 @@ class ConfigManager:
                 "ignore_case": comparison.ignore_case,
                 "ignore_spaces": comparison.ignore_spaces,
                 "output_format": comparison.output_format,
-                "max_differences": comparison.max_differences
+                "max_differences": comparison.max_differences,
+                # Report Fidelity Pattern attributes (backward-compatible defaults)
+                "csv_preview_limit": comparison.csv_preview_limit,
+                "entire_column_sample_size": comparison.entire_column_sample_size,
+                "collapse_entire_column_in_preview": comparison.collapse_entire_column_in_preview,
+                # NOTE: collapse_entire_column_in_full removed - collapse is now permanent
+                "export_rowlevel_audit_full": comparison.export_rowlevel_audit_full,
+                "zip_large_exports": comparison.zip_large_exports,
+                "preview_order": comparison.preview_order,
+                # Existing Report Fidelity Pattern attributes
+                "export_full": comparison.export_full,
+                "annotate_entire_column": comparison.annotate_entire_column,
+                "chunk_export_size": comparison.chunk_export_size,
+                "enable_smart_preview": comparison.enable_smart_preview
             })
         
         with open(output_path, 'w') as f:

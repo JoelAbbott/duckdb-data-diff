@@ -46,7 +46,7 @@ class TestPreviewUnionSchema:
         self.mock_config.max_differences = 1000
         self.mock_config.export_full = True
         self.mock_config.chunk_export_size = 50000
-        self.mock_config.collapse_entire_column_in_preview = False  # Default behavior
+        # Note: Preview now permanently collapses - no flag needed
         self.mock_config.collapse_entire_column_in_full = False
         
         # Mock dataset configs
@@ -267,13 +267,12 @@ class TestPreviewUnionSchema:
     
     def test_preview_collapses_entire_column_to_single_summary_row(self, monkeypatch):
         """
-        Test that preview emits exactly 1 row for columns with entire_column = TRUE (no samples).
+        Test that preview PERMANENTLY emits exactly 1 row for columns with entire_column = TRUE.
         
-        This test MUST FAIL until preview collapse logic is implemented.
+        Updated for permanent collapse - no configuration flag needed.
         """
-        # Arrange: Mock version check and enable collapse mode
+        # Arrange: Mock version check - collapse is now permanent
         monkeypatch.setattr(self.comparator, "_duckdb_supports_force_quote", lambda: True)
-        self.mock_config.collapse_entire_column_in_preview = True  # Enable collapse mode
         
         # Create a scenario where one column is fully different
         # Mock the annotated_query to simulate a column with entire_column = TRUE
@@ -365,7 +364,7 @@ class TestPreviewUnionSchema:
                 if 'UNION ALL' in line or 'ORDER BY' in line:
                     break
         
-        # 2. For fully-different columns in collapse mode, summaries should be limited to 1 per column
+        # 2. For fully-different columns, summaries should be permanently limited to 1 per column
         # Look for the summaries branch logic with collapse behavior
         summaries_branch_lines = []
         lines = preview_query.split('\n')
@@ -380,14 +379,14 @@ class TestPreviewUnionSchema:
         
         if summaries_branch_lines:
             summaries_section = ' '.join(summaries_branch_lines)
-            # In collapse mode, should use WHERE rn <= 1 and PARTITION BY "Differing Column"
-            assert 'WHERE rn <= 1' in summaries_section, \
+            # In permanent collapse mode, should use WHERE rn = 1 and PARTITION BY "Differing Column"
+            assert 'WHERE rn = 1' in summaries_section, \
                 f"Summaries branch should be limited to 1 row per column in collapse mode: {summaries_section}"
         
-        # 3. Verify PARTITION BY "Differing Column" is used for summaries in collapse mode
+        # 3. Verify PARTITION BY "Differing Column" is used for summaries in permanent collapse mode
         partition_by_patterns = [line for line in lines if 'PARTITION BY' in line and 'Differing Column' in line]
         assert len(partition_by_patterns) > 0, \
-            f"Should use PARTITION BY Differing Column in collapse mode: {preview_query}"
+            f"Should use PARTITION BY Differing Column in permanent collapse mode: {preview_query}"
         
         # 4. Verify deterministic ordering is preserved
         assert 'ORDER BY' in preview_query, "Should maintain deterministic ordering"
@@ -398,7 +397,7 @@ class TestPreviewUnionSchema:
         assert 'SELECT * FROM (' in preview_query, "Should use wrapper SELECT"
         
         # This test documents the requirement:
-        # Preview must collapse entire_column=TRUE to single summary rows (no samples)
+        # Preview must PERMANENTLY collapse entire_column=TRUE to single summary rows (no samples)
     
     def test_full_export_now_permanently_collapsed_by_default(self, monkeypatch):
         """

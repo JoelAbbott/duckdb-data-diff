@@ -1366,14 +1366,14 @@ class DataComparator:
                 # NEW: Generate both full and preview exports with enhanced naming
                 if hasattr(config, 'export_full') and config.export_full:
                     
-                    # PERMANENT COLLAPSE: Always generate collapsed full export (no config flag needed)
-                    # Generate collapsed export - only show summaries of entirely different columns
-                    # Use ROW_NUMBER() to get exactly one row per column that is entirely different
-                    collapsed_query = f"""
+                    # HYBRID FULL EXPORT: Always generate hybrid export (collapsed summaries + all partial differences)
+                    # This ensures full export is never empty when preview has data
+                    # Use UNION ALL to combine: (1) collapsed summaries for entire columns, (2) all partial differences
+                    hybrid_query = f"""
                         WITH annotated_data AS (
                             {annotated_query}
                         ),
-                        collapsed_summaries AS (
+                        summaries AS (
                             SELECT 
                                 {qident("Key")},
                                 {qident("Differing Column")},
@@ -1381,28 +1381,42 @@ class DataComparator:
                                 {qident("Right Value")},
                                 {qident("Difference Type")},
                                 {qident("Entire Column Different")},
+                                2::BIGINT AS sample,
                                 ROW_NUMBER() OVER (
                                     PARTITION BY {qident("Differing Column")} 
                                     ORDER BY {qident("Key")}
                                 ) as rn
                             FROM annotated_data 
                             WHERE {qident("Entire Column Different")} = 'true'
+                        ),
+                        collapsed_summaries AS (
+                            SELECT * EXCLUDE (rn)
+                            FROM summaries
+                            WHERE rn = 1
+                        ),
+                        partials AS (
+                            SELECT 
+                                {qident("Key")},
+                                {qident("Differing Column")},
+                                {qident("Left Value")},
+                                {qident("Right Value")},
+                                {qident("Difference Type")},
+                                {qident("Entire Column Different")},
+                                0::BIGINT AS sample
+                            FROM annotated_data 
+                            WHERE {qident("Entire Column Different")} = 'false'
                         )
-                        SELECT 
-                            {qident("Key")},
-                            {qident("Differing Column")},
-                            {qident("Left Value")},
-                            {qident("Right Value")},
-                            {qident("Difference Type")},
-                            {qident("Entire Column Different")}
-                        FROM collapsed_summaries
-                        WHERE rn = 1
-                        ORDER BY {qident("Differing Column")}, {qident("Key")}
+                        SELECT * EXCLUDE (sample) FROM (
+                            SELECT * FROM collapsed_summaries
+                            UNION ALL
+                            SELECT * FROM partials
+                        ) AS full_out
+                        ORDER BY {qident("Differing Column")}, {qident("Key")}, sample DESC
                     """
                     
-                    # PERMANENT: Standard full export is now always collapsed (standard naming)
+                    # HYBRID: Standard full export is now hybrid (collapsed summaries + all partial differences)
                     value_diff_full_path = output_dir / "value_differences_full.csv"
-                    self._export_full_csv(collapsed_query, value_diff_full_path, 
+                    self._export_full_csv(hybrid_query, value_diff_full_path, 
                                         getattr(config, 'chunk_export_size', 50000),
                                         order_cols=["Differing Column", "Key"])
                     outputs["value_differences_full"] = value_diff_full_path
@@ -1450,13 +1464,12 @@ class DataComparator:
                     quoted_order_cols = [qident(col) for col in preview_order]
                     order_clause = f"ORDER BY {', '.join(quoted_order_cols)}"
                     
-                    # Check if preview collapse is enabled
-                    collapse_preview = getattr(config, 'collapse_entire_column_in_preview', False)
+                    # PERMANENT COLLAPSE: Preview now always uses collapsed mode
+                    # No configuration flag needed - this is the new permanent behavior
                     
-                    # Use ROW_NUMBER() instead of QUALIFY for compatibility with uniform UNION schema
-                    if collapse_preview:
-                        # COLLAPSE MODE: For entire_column=TRUE, show only 1 summary row per column (no samples)
-                        smart_preview_query = f"""
+                    # Use ROW_NUMBER() for compatibility with uniform UNION schema - permanent collapse
+                    # PERMANENT COLLAPSE MODE: For entire_column=TRUE, show only 1 summary row per column (no samples)
+                    smart_preview_query = f"""
                             SELECT * FROM (
                                 WITH annotated_data AS (
                                     {annotated_query}
@@ -1513,68 +1526,6 @@ class DataComparator:
                                     CAST(0 AS BIGINT) AS sample
                                 FROM partials 
                                 WHERE rn <= {preview_limit - sample_size - 1}
-                            ) AS preview
-                            ORDER BY {', '.join(quoted_order_cols)}, sample DESC
-                        """
-                    else:
-                        # STANDARD MODE: Show multiple rows per entire_column=TRUE column (existing behavior)
-                        smart_preview_query = f"""
-                            SELECT * FROM (
-                                WITH annotated_data AS (
-                                    {annotated_query}
-                                ),
-                                summaries AS (
-                                    SELECT *, ROW_NUMBER() OVER ({order_clause}) as rn
-                                    FROM annotated_data 
-                                    WHERE {qident("Entire Column Different")} = 'true'
-                                ),
-                                samples AS (
-                                    SELECT *, ROW_NUMBER() OVER ({order_clause}) as rn
-                                    FROM annotated_data 
-                                    WHERE {qident("Entire Column Different")} = 'false'
-                                ),
-                                partials AS (
-                                    SELECT *, ROW_NUMBER() OVER ({order_clause}) as rn
-                                    FROM annotated_data
-                                    WHERE {qident("Key")} NOT IN (
-                                        SELECT {qident("Key")} FROM summaries WHERE rn <= {sample_size}
-                                        UNION ALL
-                                        SELECT {qident("Key")} FROM samples WHERE rn <= {sample_size}
-                                    )
-                                )
-                                -- UNIFORM SCHEMA: All branches project identical columns with compatible types
-                                SELECT 
-                                    {qident("Differing Column")},
-                                    {qident("Key")},
-                                    {qident("Left Value")},
-                                    {qident("Right Value")},
-                                    {qident("Difference Type")},
-                                    {qident("Entire Column Different")} AS entire_column,
-                                    CAST(2 AS BIGINT) AS sample
-                                FROM summaries 
-                                WHERE rn <= {sample_size}
-                                UNION ALL
-                                SELECT 
-                                    {qident("Differing Column")},
-                                    {qident("Key")},
-                                    {qident("Left Value")},
-                                    {qident("Right Value")},
-                                    {qident("Difference Type")},
-                                    {qident("Entire Column Different")} AS entire_column,
-                                    CAST(1 AS BIGINT) AS sample
-                                FROM samples 
-                                WHERE rn <= {sample_size}
-                                UNION ALL
-                                SELECT 
-                                    {qident("Differing Column")},
-                                    {qident("Key")},
-                                    {qident("Left Value")},
-                                    {qident("Right Value")},
-                                    {qident("Difference Type")},
-                                    {qident("Entire Column Different")} AS entire_column,
-                                    CAST(0 AS BIGINT) AS sample
-                                FROM partials 
-                                WHERE rn <= {preview_limit - 2 * sample_size}
                             ) AS preview
                             ORDER BY {', '.join(quoted_order_cols)}, sample DESC
                         """

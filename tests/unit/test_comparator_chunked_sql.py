@@ -114,7 +114,9 @@ class TestDataComparatorChunkedSQLConsistency:
                f"SQL must NOT use unmapped column 'r.From' but found it in: {sql_statements}"
         
         # Additional validation: Check JOIN pattern
-        join_pattern = re.search(r'l\.From\s*=\s*r\.(\w+)', sql_statements)
+        # Updated pattern to match new TRIM(TRY_CAST(...)) format
+        # The pattern now looks for: TRIM(TRY_CAST(l.from AS VARCHAR)) = TRIM(TRY_CAST(r.author AS VARCHAR))
+        join_pattern = re.search(r'TRIM\(TRY_CAST\(l\.from AS VARCHAR\)\)\s*=\s*TRIM\(TRY_CAST\(r\.(\w+) AS VARCHAR\)\)', sql_statements)
         assert join_pattern, f"Could not find JOIN pattern in SQL: {sql_statements}"
         assert join_pattern.group(1) == expected_right_column, \
                f"JOIN should use 'r.{expected_right_column}' but found 'r.{join_pattern.group(1)}'"

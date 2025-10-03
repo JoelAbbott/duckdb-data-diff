@@ -605,11 +605,13 @@ class DataComparator:
     def _build_robust_comparison_condition(self, norm_col: str, norm_right_col: str, 
                                          config: ComparisonConfig) -> str:
         """
-        Build a robust comparison condition that handles date/time and string normalization.
+        Build a robust comparison condition with proper value coercion.
         
-        This centralizes the comparison logic to eliminate false positives caused by:
-        1. Date/time format differences (e.g., '2024-01-01 00:00:00' vs '1/1/2024')
-        2. String whitespace and case differences (e.g., ' VALUE A  ' vs 'value a')
+        Handles multiple data type formats with priority-based comparison:
+        1. Numeric values (with currency/percentage stripping)
+        2. Date/timestamp values (multiple formats)
+        3. Boolean values (only actual boolean strings, not numbers)
+        4. String values (normalized with lowercase/trim)
         
         Args:
             norm_col: Normalized left column name
@@ -619,59 +621,121 @@ class DataComparator:
         Returns:
             SQL condition string for robust comparison
         """
-        if config.tolerance > 0:
-            # Numeric comparison with tolerance
-            return f"""
-                (
-                    (l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL) OR
-                    (l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL) OR
-                    (
-                        TRY_CAST(l.{norm_col} AS DOUBLE) IS NOT NULL AND
-                        TRY_CAST(r.{norm_right_col} AS DOUBLE) IS NOT NULL AND
-                        ABS(TRY_CAST(l.{norm_col} AS DOUBLE) - 
-                            TRY_CAST(r.{norm_right_col} AS DOUBLE)) > {config.tolerance}
-                    ) OR
-                    (
-                        TRY_CAST(l.{norm_col} AS DOUBLE) IS NULL AND
-                        TRY_CAST(l.{norm_col} AS VARCHAR) != TRY_CAST(r.{norm_right_col} AS VARCHAR)
+        # Build expressions for numeric coercion with currency stripping
+        # This handles: $1,234.56, (123.45) for negative, currency symbols, commas
+        left_numeric_expr = f"""
+            TRY_CAST(
+                TRIM(
+                    REGEXP_REPLACE(
+                        REGEXP_REPLACE(
+                            REGEXP_REPLACE(
+                                REGEXP_REPLACE(
+                                    TRY_CAST(l.{norm_col} AS VARCHAR),
+                                    '\\s*[$£€¥₪₹¢]\\s*', '', 'g'
+                                ),
+                                ',', '', 'g'
+                            ),
+                            '^\\(', '-', 'g'
+                        ),
+                        '\\)$', '', 'g'
                     )
-                )
+                ) AS DOUBLE
+            )
+        """
+        
+        right_numeric_expr = f"""
+            TRY_CAST(
+                TRIM(
+                    REGEXP_REPLACE(
+                        REGEXP_REPLACE(
+                            REGEXP_REPLACE(
+                                REGEXP_REPLACE(
+                                    TRY_CAST(r.{norm_right_col} AS VARCHAR),
+                                    '\\s*[$£€¥₪₹¢]\\s*', '', 'g'
+                                ),
+                                ',', '', 'g'
+                            ),
+                            '^\\(', '-', 'g'
+                        ),
+                        '\\)$', '', 'g'
+                    )
+                ) AS DOUBLE
+            )
+        """
+        
+        # Build expressions for date coercion (multiple formats)
+        # Must cast to VARCHAR first since TRY_STRPTIME requires VARCHAR input
+        left_date_expr = f"""
+            COALESCE(
+                TRY_CAST(l.{norm_col} AS TIMESTAMP),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%m/%d/%Y'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%m/%d/%Y %H:%M'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%d/%m/%Y'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%Y-%m-%d'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%m-%d-%Y'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%Y/%m/%d'),
+                TRY_STRPTIME(TRY_CAST(l.{norm_col} AS VARCHAR), '%d-%m-%Y')
+            )
+        """
+        
+        right_date_expr = f"""
+            COALESCE(
+                TRY_CAST(r.{norm_right_col} AS TIMESTAMP),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%m/%d/%Y'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%m/%d/%Y %H:%M'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%d/%m/%Y'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%Y-%m-%d'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%m-%d-%Y'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%Y/%m/%d'),
+                TRY_STRPTIME(TRY_CAST(r.{norm_right_col} AS VARCHAR), '%d-%m-%Y')
+            )
+        """
+        
+        # Build the numeric comparison based on tolerance setting
+        if config.tolerance > 0:
+            numeric_comparison = f"""
+                ABS({left_numeric_expr} - {right_numeric_expr}) > {config.tolerance}
             """
         else:
-            # Robust exact comparison with date/time and string normalization
-            return f"""
-                (
-                    (l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL) OR
-                    (l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL) OR
-                    (
-                        -- First try timestamp comparison for date/time values
-                        CASE 
-                            WHEN TRY_CAST(l.{norm_col} AS TIMESTAMP) IS NOT NULL 
-                                 AND TRY_CAST(r.{norm_right_col} AS TIMESTAMP) IS NOT NULL THEN
-                                -- Both can be cast to timestamp - compare as timestamps
-                                TRY_CAST(l.{norm_col} AS TIMESTAMP) != TRY_CAST(r.{norm_right_col} AS TIMESTAMP)
-                            ELSE
-                                -- Fall back to robust string comparison with normalization
-                                (
-                                    CASE 
-                                        -- Boolean normalization
-                                        WHEN LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                        WHEN LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
-                                        -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(TRY_CAST(l.{norm_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
-                                    END != 
-                                    CASE 
-                                        -- Boolean normalization
-                                        WHEN LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', '1', 'yes') THEN 't'
-                                        WHEN LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('false', 'f', '0', 'no', '') THEN 'f'
-                                        -- String normalization: lowercase, trim, strip quotes/apostrophes, collapse whitespace
-                                        ELSE REGEXP_REPLACE(TRIM(LOWER(RTRIM(LTRIM(RTRIM(LTRIM(TRY_CAST(r.{norm_right_col} AS VARCHAR), '"'), '"'), ''''), ''''))), '\\s+', ' ', 'g')
-                                    END
-                                )
-                        END
-                    )
-                )
+            numeric_comparison = f"""
+                {left_numeric_expr} != {right_numeric_expr}
             """
+        
+        # Build the complete comparison condition with priority-based logic
+        return f"""
+            (
+                -- NULL handling first
+                (l.{norm_col} IS NULL AND r.{norm_right_col} IS NOT NULL) OR
+                (l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NULL) OR
+                (
+                    l.{norm_col} IS NOT NULL AND r.{norm_right_col} IS NOT NULL AND
+                    CASE
+                        -- Priority 1: Try numeric comparison (with currency stripping)
+                        WHEN {left_numeric_expr} IS NOT NULL AND {right_numeric_expr} IS NOT NULL THEN
+                            {numeric_comparison}
+                        
+                        -- Priority 2: Try date comparison (multiple formats)
+                        WHEN {left_date_expr} IS NOT NULL AND {right_date_expr} IS NOT NULL THEN
+                            {left_date_expr} != {right_date_expr}
+                        
+                        -- Priority 3: Boolean comparison (only for actual boolean strings, not numbers)
+                        -- Check that values are NOT purely numeric before treating as boolean
+                        WHEN NOT (TRY_CAST(l.{norm_col} AS DOUBLE) IS NOT NULL) 
+                             AND NOT (TRY_CAST(r.{norm_right_col} AS DOUBLE) IS NOT NULL)
+                             AND LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('true', 'false', 't', 'f', 'yes', 'no')
+                             AND LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 'false', 't', 'f', 'yes', 'no') THEN
+                            -- Compare as booleans
+                            (LOWER(TRY_CAST(l.{norm_col} AS VARCHAR)) IN ('true', 't', 'yes')) != 
+                            (LOWER(TRY_CAST(r.{norm_right_col} AS VARCHAR)) IN ('true', 't', 'yes'))
+                        
+                        -- Priority 4: String comparison (normalized with lowercase, trim, and quote removal)
+                        ELSE
+                            TRIM(LOWER(TRIM(TRY_CAST(l.{norm_col} AS VARCHAR))), '''\"') != 
+                            TRIM(LOWER(TRIM(TRY_CAST(r.{norm_right_col} AS VARCHAR))), '''\"')
+                    END
+                )
+            )
+        """
     
     def _find_value_differences(self, left_table: str, right_table: str,
                                key_columns: List[str],
